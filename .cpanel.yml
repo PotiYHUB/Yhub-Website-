@@ -1,0 +1,6 @@
+---
+deployment:
+  tasks:
+    - export DEPLOYPATH=/home/potihub/public_html/
+    - /bin/rsync -arv dist/ $DEPLOYPATH
+    - /bin/cp dist/.htaccess $DEPLOYPATH 2>/dev/null || true
