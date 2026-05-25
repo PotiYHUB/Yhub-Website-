@@ -1,0 +1,95 @@
+{
+  "entities": {
+    "Room": {
+      "title": "Room",
+      "description": "Youth Hub spaces available for youth booking",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier of the room" },
+        "name": { "type": "string", "description": "Georgian name of the room" },
+        "description": { "type": "string", "description": "Detailed description of the room and equipment" },
+        "capacity": { "type": "integer", "description": "Maximum number of attendees" },
+        "price": { "type": "number", "description": "Fixed price in GEL or 0 if free" },
+        "imageUrl": { "type": "string", "description": "Unsplash or asset URL of the room cover" },
+        "features": { "type": "array", "description": "List of key features or equipments" }
+      },
+      "required": ["id", "name", "description", "capacity", "price", "imageUrl", "features"]
+    },
+    "Booking": {
+      "title": "Booking",
+      "description": "Room reservation request details",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "roomId": { "type": "string" },
+        "roomName": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "durationHours": { "type": "string" },
+        "numPeople": { "type": "integer" },
+        "totalPrice": { "type": "number" },
+        "firstName": { "type": "string" },
+        "lastName": { "type": "string" },
+        "organization": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "phone": { "type": "string" },
+        "answers": { "type": "object", "description": "JSON responses to custom questions" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "invoiceNumber": { "type": "string" },
+        "adminNotes": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "roomId", "roomName", "date", "durationHours", "numPeople", "totalPrice", "firstName", "lastName", "email", "phone", "status", "createdAt"]
+    },
+    "CustomQuestion": {
+      "title": "CustomQuestion",
+      "description": "Dynamic custom question prompt set by the hub administrator",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "label": { "type": "string" },
+        "placeholder": { "type": "string" },
+        "required": { "type": "boolean" },
+        "type": { "type": "string", "enum": ["text", "textarea", "select"] },
+        "options": { "type": "array" }
+      },
+      "required": ["id", "label", "placeholder", "required", "type"]
+    },
+    "HubItem": {
+      "title": "HubItem",
+      "description": "Dynamic post representing a news story, training, contest, or vacancy",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "category": { "type": "string", "enum": ["news", "vacancy", "contest", "training"] },
+        "title": { "type": "string" },
+        "summary": { "type": "string" },
+        "content": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "coverImage": { "type": "string" },
+        "deadline": { "type": "string", "format": "date" },
+        "location": { "type": "string" },
+        "salaryRange": { "type": "string" },
+        "requirements": { "type": "array" }
+      },
+      "required": ["id", "category", "title", "summary", "content", "date", "coverImage"]
+    }
+  },
+  "firestore": {
+    "rooms": {
+      "schema": "Room",
+      "description": "Available rooms that can be booked"
+    },
+    "bookings": {
+      "schema": "Booking",
+      "description": "Reservations submitted by visitors"
+    },
+    "customQuestions": {
+      "schema": "CustomQuestion",
+      "description": "Custom questions administrators attach to booking requests"
+    },
+    "hubItems": {
+      "schema": "HubItem",
+      "description": "CMS blog/news/events item metadata"
+    }
+  }
+}

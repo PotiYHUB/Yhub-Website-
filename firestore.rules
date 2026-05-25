@@ -1,0 +1,133 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net Default-Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && 
+             request.auth.token.email == 'yhub.poti@gmail.com' && 
+             request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Entity Validations
+    function isValidRoom(data) {
+      return data.keys().hasAll(['id', 'name', 'description', 'capacity', 'price', 'imageUrl', 'features']) &&
+             data.keys().size() == 7 &&
+             data.id is string && data.id.size() <= 128 &&
+             data.name is string && data.name.size() <= 256 &&
+             data.description is string && data.description.size() <= 2000 &&
+             data.capacity is int && data.capacity >= 1 && data.capacity <= 10000 &&
+             (data.price is int || data.price is float) && data.price >= 0 &&
+             data.imageUrl is string && data.imageUrl.size() <= 1000 &&
+             data.features is list && data.features.size() <= 40;
+    }
+
+    function isValidCustomQuestion(data) {
+      return data.keys().hasAll(['id', 'label', 'placeholder', 'required', 'type']) &&
+             data.keys().size() >= 5 && data.keys().size() <= 6 &&
+             data.id is string && data.id.size() <= 128 &&
+             data.label is string && data.label.size() <= 500 &&
+             data.placeholder is string && data.placeholder.size() <= 500 &&
+             data.required is bool &&
+             data.type is string && (data.type == 'text' || data.type == 'textarea' || data.type == 'select') &&
+             (!('options' in data) || (data.options is list && data.options.size() <= 30));
+    }
+
+    function isValidHubItem(data) {
+      return data.keys().hasAll(['id', 'category', 'title', 'summary', 'content', 'date', 'coverImage']) &&
+             data.keys().size() >= 7 && data.keys().size() <= 11 &&
+             data.id is string && data.id.size() <= 128 &&
+             data.category is string && (data.category == 'news' || data.category == 'vacancy' || data.category == 'contest' || data.category == 'training') &&
+             data.title is string && data.title.size() <= 256 &&
+             data.summary is string && data.summary.size() <= 1000 &&
+             data.content is string && data.content.size() <= 15000 &&
+             data.date is string && data.date.size() <= 64 &&
+             data.coverImage is string && data.coverImage.size() <= 1000 &&
+             (!('deadline' in data) || (data.deadline is string && data.deadline.size() <= 64)) &&
+             (!('location' in data) || (data.location is string && data.location.size() <= 256)) &&
+             (!('salaryRange' in data) || (data.salaryRange is string && data.salaryRange.size() <= 256)) &&
+             (!('requirements' in data) || (data.requirements is list && data.requirements.size() <= 30));
+    }
+
+    function isValidBooking(data) {
+      return data.keys().hasAll(['id', 'roomId', 'roomName', 'date', 'durationHours', 'numPeople', 'totalPrice', 'firstName', 'lastName', 'email', 'phone', 'status', 'createdAt', 'answers']) &&
+             data.keys().size() >= 14 && data.keys().size() <= 17 &&
+             data.id is string && data.id.size() <= 128 &&
+             data.roomId is string && data.roomId.size() <= 128 &&
+             data.roomName is string && data.roomName.size() <= 256 &&
+             data.date is string && data.date.size() <= 64 &&
+             data.durationHours is string && data.durationHours.size() <= 128 &&
+             data.numPeople is int && data.numPeople >= 1 && data.numPeople <= 1000 &&
+             (data.totalPrice is int || data.totalPrice is float) && data.totalPrice >= 0 &&
+             data.firstName is string && data.firstName.size() <= 128 &&
+             data.lastName is string && data.lastName.size() <= 128 &&
+             data.email is string && data.email.size() <= 256 &&
+             data.phone is string && data.phone.size() <= 128 &&
+             data.answers is map &&
+             data.status is string && (data.status == 'pending' || data.status == 'approved' || data.status == 'rejected') &&
+             data.createdAt is string && data.createdAt.size() <= 128 &&
+             (!('organization' in data) || (data.organization is string && data.organization.size() <= 256)) &&
+             (!('invoiceNumber' in data) || (data.invoiceNumber is string && data.invoiceNumber.size() <= 128)) &&
+             (!('adminNotes' in data) || (data.adminNotes is string && data.adminNotes.size() <= 1000));
+    }
+
+    // Rules for each Collection
+    match /rooms/{roomId} {
+      allow read: if true;
+      allow create: if isAdmin() && isValidId(roomId) && isValidRoom(request.resource.data);
+      allow update: if isAdmin() && isValidId(roomId) && isValidRoom(request.resource.data);
+      allow delete: if isAdmin() && isValidId(roomId);
+    }
+
+    match /customQuestions/{questionId} {
+      allow read: if true;
+      allow create: if isAdmin() && isValidId(questionId) && isValidCustomQuestion(request.resource.data);
+      allow update: if isAdmin() && isValidId(questionId) && isValidCustomQuestion(request.resource.data);
+      allow delete: if isAdmin() && isValidId(questionId);
+    }
+
+    match /hubItems/{itemId} {
+      allow read: if true;
+      allow create: if isAdmin() && isValidId(itemId) && isValidHubItem(request.resource.data);
+      allow update: if isAdmin() && isValidId(itemId) && isValidHubItem(request.resource.data);
+      allow delete: if isAdmin() && isValidId(itemId);
+    }
+
+    match /bookings/{bookingId} {
+      // Allow loading individual booking statuses (e.g. for confirming status of individual user)
+      allow get: if true;
+      // Protect total user list query - only admins can retrieve list of bookings to prevent scraping PII
+      allow list: if isAdmin();
+      
+      // Public is allowed to create bookings
+      allow create: if isValidId(bookingId) && isValidBooking(request.resource.data);
+      
+      // Only admins can approve, reject, or delete bookings
+      allow update: if isAdmin() && isValidId(bookingId) && isValidBooking(request.resource.data);
+      allow delete: if isAdmin() && isValidId(bookingId);
+    }
+
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if isAdmin() && isValidId(settingId);
+    }
+
+    match /emails/{emailId} {
+      allow read, update, delete: if isAdmin();
+      allow create: if isValidId(emailId);
+    }
+  }
+}

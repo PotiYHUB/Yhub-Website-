@@ -1,0 +1,48 @@
+@import url('https://cdn.web-fonts.ge/fonts/bpg-glaho-web-caps/css/bpg-glaho-web-caps.css');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "BPG Glaho WEB Caps", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "BPG Glaho WEB Caps", "Outfit", sans-serif;
+  --font-mono: "BPG Glaho WEB Caps", "Fira Code", ui-monospace, SFMono-Regular, monospace;
+
+  /* Custom palette matching the requested colors #285fa0 (Blue) and #feca43 (Yellow) */
+  --color-brand-50: #f0f6fc;
+  --color-brand-100: #e1edf8;
+  --color-brand-500: #285fa0;
+  --color-brand-600: #1e4a7d;
+  --color-brand-700: #153459;
+  --color-brand-900: #0b1a2d;
+
+  --color-accent-yellow: #feca43;
+  --color-accent-hover: #e5b335;
+}
+
+body, button, input, select, textarea, h1, h2, h3, h4, h5, h6, p, a, span, label, div {
+  font-family: "BPG Glaho WEB Caps", sans-serif;
+}
+
+body {
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+  #print-invoice-sheet, #print-invoice-sheet * {
+    visibility: visible !important;
+  }
+  #print-invoice-sheet {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: white !important;
+    color: #0f172a !important;
+  }
+}
+

@@ -1,0 +1,1144 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import React, { useState, useMemo } from 'react';
+import { Room, Booking, CustomQuestion } from '../types';
+import { 
+  Users, DollarSign, Calendar as CalIcon, Clock, CheckCircle, 
+  AlertTriangle, ChevronLeft, ChevronRight, MessageSquare, 
+  Building2, User2, Eye, Info, Percent, X, Check, Youtube, Compass 
+} from 'lucide-react';
+
+interface RoomBookingProps {
+  rooms: Room[];
+  bookings: Booking[];
+  customQuestions: CustomQuestion[];
+  bookingSettingsValue?: { fullDayDiscount: number; multiDayDiscount: number }; // Optional fallback
+  bookingSettings?: { fullDayDiscount: number; multiDayDiscount: number };
+  onAddBooking: (booking: Omit<Booking, 'id' | 'createdAt' | 'status'>) => void;
+}
+
+export default function RoomBooking({
+  rooms,
+  bookings,
+  customQuestions,
+  bookingSettings,
+  onAddBooking
+}: RoomBookingProps) {
+  // Supports multi-room selections
+  const [selectedRoomIds, setSelectedRoomIds] = useState<string[]>([]);
+  const [currentYear, setCurrentYear] = useState<number>(new Date().getFullYear());
+  const [currentMonth, setCurrentMonth] = useState<number>(new Date().getMonth()); // 0-indexed
+  
+  // Immersive Details Gallery state
+  const [infoRoom, setInfoRoom] = useState<Room | null>(null);
+  const [infoActiveTab, setInfoActiveTab] = useState<'photos' | 'panorama' | 'video'>('photos');
+
+  // Form State
+  const [selectedDates, setSelectedDates] = useState<string[]>([]); // YYYY-MM-DD list
+  const [isFullDay, setIsFullDay] = useState<boolean>(false);
+  const [numPeople, setNumPeople] = useState<number>(1);
+  const [startTime, setStartTime] = useState<string>('09:00');
+  const [endTime, setEndTime] = useState<string>('12:00');
+
+  // Profile/Contact State
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [organization, setOrganization] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  
+  // Custom Answers State
+  const [customAnswers, setCustomAnswers] = useState<Record<string, string>>({});
+  
+  // Success popup state
+  const [isSuccess, setIsSuccess] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  // Find fully selected Room objects
+  const selectedRooms = useMemo(() => {
+    return rooms.filter(r => selectedRoomIds.includes(r.id));
+  }, [rooms, selectedRoomIds]);
+
+  // Calendar calculations
+  const monthNames = [
+    'იანვარი', 'თებერვალი', 'მარტი', 'აპრილი', 'მაისი', 'ივნისი',
+    'ივლისი', 'აგვისტო', 'სექტემბერი', 'ოქტომბერი', 'ნოემბერი', 'დეკემბერი'
+  ];
+  
+  const daysInMonth = useMemo(() => {
+    return new Date(currentYear, currentMonth + 1, 0).getDate();
+  }, [currentYear, currentMonth]);
+
+  const firstDayIndex = useMemo(() => {
+    let day = new Date(currentYear, currentMonth, 1).getDay();
+    return day === 0 ? 6 : day - 1;
+  }, [currentYear, currentMonth]);
+
+  const prevMonthDays = useMemo(() => {
+    return new Date(currentYear, currentMonth, 0).getDate();
+  }, [currentYear, currentMonth]);
+
+  // Parse time range range string into minute integers
+  const parseTimeRange = (durationText: string) => {
+    if (durationText.includes("მთელი დღე") || durationText === "00:00 - 24:00") {
+      return { start: 0, end: 1440 };
+    }
+    const parts = durationText.split('-').map(p => p.trim());
+    if (parts.length !== 2) return null;
+    const [startStr, endStr] = parts;
+    const [startH, startM] = startStr.split(':').map(Number);
+    const [endH, endM] = endStr.split(':').map(Number);
+    return {
+      start: startH * 60 + startM,
+      end: endH * 60 + endM
+    };
+  };
+
+  // Get both approved and pending bookings on a selected date, overlapping any of the currently selected rooms
+  const getBookingsForDate = (dateString: string) => {
+    if (selectedRoomIds.length === 0 || !dateString) return [];
+    return bookings.filter(
+      b => {
+        const bookingRoomIds = b.roomId.split(',').map(id => id.trim());
+        const hasOverlapRoom = selectedRoomIds.some(id => bookingRoomIds.includes(id));
+        return hasOverlapRoom && 
+               b.status !== 'rejected' &&
+               b.date.split(',').map(d => d.trim()).includes(dateString);
+      }
+    );
+  };
+
+  // Find overlapping booking given a target date and hours
+  const checkTimeOverlap = (dateStr: string, startStr: string, endStr: string) => {
+    if (selectedRoomIds.length === 0 || !dateStr || !startStr || !endStr) return null;
+    
+    const [startH, startM] = startStr.split(':').map(Number);
+    const [endH, endM] = endStr.split(':').map(Number);
+    const userStart = startH * 60 + startM;
+    const userEnd = endH * 60 + endM;
+    
+    if (userStart >= userEnd) return null;
+    
+    const dayBookings = getBookingsForDate(dateStr);
+    for (const b of dayBookings) {
+      const range = parseTimeRange(b.durationHours);
+      if (range) {
+        if (userStart < range.end && range.start < userEnd) {
+          return b;
+        }
+      }
+    }
+    return null;
+  };
+
+  // Memoized conflict for real-time form feedback
+  const bookingConflict = useMemo(() => {
+    const sTime = isFullDay ? '00:00' : startTime;
+    const eTime = isFullDay ? '24:00' : endTime;
+    
+    for (const d of selectedDates) {
+      const conflict = checkTimeOverlap(d, sTime, eTime);
+      if (conflict) {
+        return conflict;
+      }
+    }
+    return null;
+  }, [selectedDates, startTime, endTime, isFullDay, selectedRoomIds, bookings]);
+
+  // Check if a specific date number has any active bookings at all on our selected rooms
+  const getBookingStatusForDate = (dayNumber: number) => {
+    if (selectedRoomIds.length === 0) return null;
+    const formattedDate = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(dayNumber).padStart(2, '0')}`;
+    const dateBookings = getBookingsForDate(formattedDate);
+    return dateBookings.length > 0 ? dateBookings : null;
+  };
+
+  // Switch calendar month
+  const handlePrevMonth = () => {
+    if (currentMonth === 0) {
+      setCurrentMonth(11);
+      setCurrentYear(prev => prev - 1);
+    } else {
+      setCurrentMonth(prev => prev - 1);
+    }
+    setSelectedDates([]);
+  };
+
+  const handleNextMonth = () => {
+    if (currentMonth === 11) {
+      setCurrentMonth(0);
+      setCurrentYear(prev => prev + 1);
+    } else {
+      setCurrentMonth(prev => prev + 1);
+    }
+    setSelectedDates([]);
+  };
+
+  // Hours length calculation
+  const calculatedHours = useMemo(() => {
+    if (isFullDay) return 12;
+    if (!startTime || !endTime) return 1;
+    const [startH, startM] = startTime.split(':').map(Number);
+    const [endH, endM] = endTime.split(':').map(Number);
+    const durationMin = (endH * 60 + endM) - (startH * 60 + startM);
+    const durationHours = Math.max(0.5, durationMin / 60);
+    return Math.ceil(durationHours);
+  }, [startTime, endTime, isFullDay]);
+
+  // Cohesive discount and pricing model breakdown calculations
+  const priceBreakdown = useMemo(() => {
+    const sumHourPrice = selectedRooms.reduce((acc, r) => acc + r.price, 0);
+    const sumDayPrice = selectedRooms.reduce((acc, r) => acc + (r.dayPrice || Math.round(r.price * 8)), 0);
+    const daysCount = Math.max(1, selectedDates.length);
+    const basePrice = isFullDay ? sumDayPrice * daysCount : sumHourPrice * calculatedHours * daysCount;
+
+    return {
+      sumHourPrice,
+      sumDayPrice,
+      daysCount,
+      basePrice,
+      fullDayPct: 0,
+      multiDayPct: 0,
+      discountAmount: 0,
+      finalPrice: basePrice
+    };
+  }, [selectedRooms, calculatedHours, selectedDates, isFullDay]);
+
+  const currentTotalPrice = priceBreakdown.finalPrice;
+
+  // Click handler to toggle selected rooms
+  const handleRoomToggle = (roomId: string) => {
+    setSelectedRoomIds(prev => {
+      if (prev.includes(roomId)) {
+        return prev.filter(id => id !== roomId);
+      } else {
+        return [...prev, roomId];
+      }
+    });
+    setErrorMessage('');
+  };
+
+  const handleDaySelect = (dayNumber: number) => {
+    const formattedDate = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(dayNumber).padStart(2, '0')}`;
+    setSelectedDates(prev => {
+      if (prev.includes(formattedDate)) {
+        return prev.filter(d => d !== formattedDate);
+      } else {
+        return [...prev, formattedDate];
+      }
+    });
+    setErrorMessage('');
+  };
+
+  const handleCustomAnswerChange = (questionLabel: string, value: string) => {
+    setCustomAnswers(prev => ({
+      ...prev,
+      [questionLabel]: value
+    }));
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage('');
+
+    if (selectedRoomIds.length === 0) {
+      setErrorMessage('გთხოვთ აირჩიოთ მინიმუმ ერთი სამუშაო ოთახი.');
+      return;
+    }
+    if (selectedDates.length === 0) {
+      setErrorMessage('გთხოვთ მონიშნოთ მინიმუმ ერთი სასურველი თარიღი კალენდარზე.');
+      return;
+    }
+
+    // Capacity validation check (runs across all selected rooms to ensure maximum constraints)
+    for (const r of selectedRooms) {
+      if (numPeople > r.capacity) {
+        setErrorMessage(`დაუშვებელია დაჯავშნა! ოთახის "${r.name}" მაქსიმალური ტევადობაა ${r.capacity} ადამიანი.`);
+        return;
+      }
+    }
+
+    if (!isFullDay && (calculatedHours <= 0 || startTime >= endTime)) {
+      setErrorMessage('ჯავშნის დასრულების დრო უნდა აღემატებოდეს დაწყების დროს.');
+      return;
+    }
+
+    if (bookingConflict) {
+      const conflictMsg = isFullDay 
+        ? `შერჩეული დღე(ები) ემთხვევა არსებულ ჯავშანს: ${bookingConflict.durationHours}. გთხოვთ შეარჩიოთ თავისუფალი საათები ან დღეები.`
+        : `მოცემული დროის შუალედი (${startTime} - ${endTime}) ემთხვევა არსებულ ჯავშანს: ${bookingConflict.durationHours}. გთხოვთ შეარჩიოთ სხვა საათები.`;
+      setErrorMessage(conflictMsg);
+      return;
+    }
+
+    if (!firstName || !lastName || !email || !phone) {
+      setErrorMessage('გთხოვთ შეავსოთ ყველა აუცილებელი საკონტაქტო ველი.');
+      return;
+    }
+
+    for (const q of customQuestions) {
+      if (q.required && !customAnswers[q.label]?.trim()) {
+        setErrorMessage(`გთხოვთ უპასუხოთ სავალდებულო კითხვას: "${q.label}"`);
+        return;
+      }
+    }
+
+    const durationText = isFullDay ? "მთელი დღე" : `${startTime} - ${endTime}`;
+    const dateString = selectedDates.join(', ');
+    
+    // Create new booking record. Commas map multiple items gracefully
+    onAddBooking({
+      roomId: selectedRoomIds.join(', '),
+      roomName: selectedRooms.map(r => r.name).join(', '),
+      date: dateString,
+      durationHours: durationText,
+      numPeople,
+      totalPrice: currentTotalPrice,
+      firstName,
+      lastName,
+      organization: organization || undefined,
+      email,
+      phone,
+      answers: customAnswers
+    });
+
+    // Reset inputs, triggers success popup overlay!
+    setIsSuccess(true);
+    setSelectedDates([]);
+    setIsFullDay(false);
+    setNumPeople(1);
+    setFirstName('');
+    setLastName('');
+    setOrganization('');
+    setEmail('');
+    setPhone('');
+    setCustomAnswers({});
+  };
+
+  return (
+    <section id="booking" className="py-20 bg-white border-t border-slate-100">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        
+        {/* Title Heading */}
+        <div className="text-center max-w-3xl mx-auto mb-16">
+          <span className="text-emerald-600 text-xs font-bold tracking-widest uppercase bg-emerald-50 px-3 py-1.5 rounded-full font-mono">
+            ჯავშნის სისტემა
+          </span>
+          <h2 className="mt-4 text-3xl sm:text-4xl font-display font-black text-slate-900 tracking-tight">
+            დაჯავშნე სამუშაო სივრცე
+          </h2>
+          <p className="mt-3 text-sm sm:text-base text-slate-600 font-sans leading-relaxed">
+            შეარჩიე სასურველი სამუშაო სივრცე (ან მოხაზეთ რამდენიმე ერთად), მონიშნეთ თავისუფალი დღეები კალენდარზე და შეავსეთ მოკლე განაცხადი.
+          </p>
+        </div>
+
+        {/* Normal booking flow layout */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
+          
+          {/* Left Side: Rooms Catalog & Info trigger buttons */}
+          <div className="lg:col-span-6 space-y-6">
+            <div>
+              <h3 className="font-display font-extrabold text-lg sm:text-xl text-slate-900 flex items-center justify-between mb-6">
+                <span className="flex items-center">
+                  <span className="w-8 h-8 rounded-full bg-slate-100 text-slate-700 font-bold flex items-center justify-center text-sm mr-2.5">1</span>
+                  <span>აირჩიეთ სამუშაო ოთახი</span>
+                </span>
+                {selectedRoomIds.length > 0 && (
+                  <span className="text-xs bg-emerald-50 text-emerald-700 px-3 py-1 rounded-full font-bold">
+                    მონიშნულია {selectedRoomIds.length} სივრცე
+                  </span>
+                )}
+              </h3>
+              
+              <div className="space-y-4">
+                {rooms.map((room) => {
+                  const isSelected = selectedRoomIds.includes(room.id);
+                  return (
+                    <div
+                      key={room.id}
+                      id={`room-option-${room.id}`}
+                      onClick={() => handleRoomToggle(room.id)}
+                      className={`flex flex-col sm:flex-row bg-slate-50 border rounded-2xl overflow-hidden cursor-pointer hover:border-slate-350 transition-all ${
+                        isSelected
+                          ? 'ring-2 ring-slate-900 border-slate-900 bg-white'
+                          : 'border-slate-100'
+                      }`}
+                    >
+                      {/* Room Picture */}
+                      <div className="w-full sm:w-1/3 h-40 bg-slate-100 shrink-0 relative">
+                        <img
+                          src={room.imageUrl}
+                          alt={room.name}
+                          referrerPolicy="no-referrer"
+                          className="w-full h-full object-cover"
+                        />
+                        {isSelected && (
+                          <div className="absolute top-3 left-3 bg-slate-900 text-white p-1 rounded-full shadow-md">
+                            <Check className="h-4 w-4" />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Room Basic texts */}
+                      <div className="p-5 flex-1 flex flex-col justify-between">
+                        <div>
+                          <div className="flex justify-between items-start">
+                            <h4 className="font-display font-extrabold text-sm sm:text-base text-slate-900 flex-1 pr-2">{room.name}</h4>
+                            <div className="flex flex-col items-end gap-1 shrink-0 select-none">
+                              <span className="bg-slate-100 px-2.5 py-1 rounded-xl text-slate-800 text-xs font-black font-mono">
+                                ₾{room.price}/სთ
+                              </span>
+                              <span className="bg-brand-50 px-2 py-0.5 rounded-lg text-brand-700 text-[10px] font-bold font-mono border border-brand-100">
+                                ₾{room.dayPrice || Math.round(room.price * 8)}/დღე
+                              </span>
+                            </div>
+                          </div>
+                          <p className="mt-1.5 text-xs text-slate-500 line-clamp-2 leading-relaxed font-sans">{room.description}</p>
+                        </div>
+
+                        {/* Room controls trigger toolbar */}
+                        <div className="mt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-t border-slate-100 pt-3">
+                          <span className="flex items-center text-xs text-slate-500 font-bold">
+                            <Users className="h-3.5 w-3.5 mr-1" />
+                            <span>ტევადობა: {room.capacity} კაცი</span>
+                          </span>
+
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setInfoActiveTab('photos');
+                              setInfoRoom(room);
+                            }}
+                            className="px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors flex items-center gap-1 shrink-0 cursor-pointer"
+                          >
+                            <Info className="h-3.5 w-3.5 text-brand-500" />
+                            <span>დამატებითი ინფორმაცია</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Right Side: Interactive Calendar Booking Questionnaire */}
+          <div className="lg:col-span-6 bg-slate-50 border border-slate-100 p-6 sm:p-8 rounded-3xl">
+            <h3 className="font-display font-extrabold text-lg sm:text-xl text-slate-900 flex items-center mb-6">
+              <span className="w-8 h-8 rounded-full bg-slate-900 text-white font-bold flex items-center justify-center text-sm mr-2.5">2</span>
+              <span>ჯავშნისა და კითხვარის დეტალები</span>
+            </h3>
+
+            {selectedRoomIds.length === 0 ? (
+              /* Display prompt when no space is selected */
+              <div className="text-center py-20 text-slate-400 font-medium">
+                <CalIcon className="h-10 w-10 mx-auto mb-3 text-slate-300 animate-bounce" />
+                <span>დაჯავშნის დასაწყებად მარცხენა პანელიდან აირჩიეთ სასურველი სამუშაო სივრცე(ები).</span>
+              </div>
+            ) : (
+              /* Actual form contents mapping selected spaces */
+              <form id="booking-form" onSubmit={handleSubmit} className="space-y-6">
+                
+                {/* Month Picker Widgets layout */}
+                <div>
+                  <label className="block text-xs font-black uppercase text-slate-400 tracking-wider mb-2.5">
+                    აირჩიეთ თარიღი კალენდარზე ({monthNames[currentMonth]} {currentYear})
+                  </label>
+                  <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-xs">
+                    
+                    <div className="flex justify-between items-center mb-4">
+                      <span className="font-display font-bold text-sm text-slate-800">
+                        {monthNames[currentMonth]} {currentYear}
+                      </span>
+                      <div className="flex space-x-1">
+                        <button
+                          id="cal-prev"
+                          type="button"
+                          onClick={handlePrevMonth}
+                          className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-100 cursor-pointer"
+                        >
+                          <ChevronLeft className="h-4 w-4" />
+                        </button>
+                        <button
+                          id="cal-next"
+                          type="button"
+                          onClick={handleNextMonth}
+                          className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-100 cursor-pointer"
+                        >
+                          <ChevronRight className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Georgian Days list */}
+                    <div className="grid grid-cols-7 gap-1 text-center text-[10px] uppercase font-black text-slate-400 mb-2">
+                      <span>ორშ</span>
+                      <span>სამ</span>
+                      <span>ოთხ</span>
+                      <span>ხუთ</span>
+                      <span>პარ</span>
+                      <span>შაბ</span>
+                      <span>კვი</span>
+                    </div>
+
+                    {/* Gregorian grid days rendering */}
+                    <div className="grid grid-cols-7 gap-1">
+                      {Array.from({ length: firstDayIndex }).map((_, i) => (
+                        <div
+                          key={`pad-${i}`}
+                          className="aspect-square text-[11px] text-slate-250 flex items-center justify-center font-sans font-light"
+                        >
+                          {prevMonthDays - firstDayIndex + i + 1}
+                        </div>
+                      ))}
+
+                      {Array.from({ length: daysInMonth }).map((_, i) => {
+                        const dayNum = i + 1;
+                        const formattedDateString = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
+                        const isSelected = selectedDates.includes(formattedDateString);
+                        
+                        const matchedBookings = getBookingStatusForDate(dayNum);
+                        const hasBookings = !!matchedBookings;
+                        const isFullyBooked = hasBookings && matchedBookings.some(
+                          b => b.durationHours.includes("მთელი დღე") || b.durationHours === "00:00 - 24:00"
+                        );
+                        
+                        return (
+                          <button
+                            key={`day-${dayNum}`}
+                            id={`cal-day-${formattedDateString}`}
+                            type="button"
+                            onClick={() => handleDaySelect(dayNum)}
+                            className={`aspect-square text-xs font-bold rounded-lg flex flex-col items-center justify-center transition-all relative ${
+                              isSelected
+                                ? 'bg-slate-900 text-white scale-105 shadow-sm border-none'
+                                : isFullyBooked
+                                  ? 'bg-rose-55 text-rose-700 border border-rose-150 cursor-pointer'
+                                  : hasBookings
+                                    ? 'bg-amber-55 text-amber-805 border border-amber-150 cursor-pointer'
+                                    : 'bg-slate-50 hover:bg-slate-200 text-slate-700 cursor-pointer border-none'
+                            }`}
+                          >
+                            <span>{dayNum}</span>
+                            {isFullyBooked ? (
+                              <span className={`absolute bottom-0.5 text-[6px] font-black uppercase tracking-tight ${
+                                isSelected ? 'text-white' : 'text-rose-600'
+                              }`}>
+                                სრულად
+                              </span>
+                            ) : hasBookings ? (
+                              <span className={`absolute bottom-0.5 text-[6px] font-black uppercase tracking-tight ${
+                                isSelected ? 'text-white' : 'text-amber-600'
+                              }`}>
+                                ჯავშანი
+                              </span>
+                            ) : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Date details mapping list */}
+                  {selectedDates.length > 0 && (
+                    <div className="mt-3 p-4 bg-white border border-slate-200/80 rounded-2xl space-y-2 max-h-64 overflow-y-auto shadow-sm">
+                      <div className="text-xs font-bold text-emerald-600 flex items-center justify-between pb-1.5 border-b border-slate-100">
+                        <span className="flex items-center">
+                          <CheckCircle className="h-4 w-4 mr-1.5 shrink-0" />
+                          <span>მონიშნულია თარიღები ({selectedDates.length}):</span>
+                        </span>
+                        <button 
+                          type="button" 
+                          onClick={() => setSelectedDates([])}
+                          className="text-[10px] text-slate-400 hover:text-slate-600 underline font-sans"
+                        >
+                          გასუფთავება
+                        </button>
+                      </div>
+                      
+                      <div className="space-y-3 pt-1">
+                        {selectedDates.map(dateStr => {
+                          const dayBookings = getBookingsForDate(dateStr);
+                          const dayFullyBooked = dayBookings.some(b => b.durationHours.includes("მთელი დღე") || b.durationHours === "00:00 - 24:00");
+                          
+                          return (
+                            <div key={dateStr} className="p-2 rounded-lg bg-slate-50 border border-slate-100 space-y-1">
+                              <div className="flex justify-between items-center">
+                                <span className="text-xs font-black text-slate-700">{dateStr}</span>
+                                {dayFullyBooked && (
+                                  <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase bg-rose-100 text-rose-700">
+                                    დაკავებულია სრულად
+                                  </span>
+                                )}
+                              </div>
+                              {dayBookings.length === 0 ? (
+                                <p className="text-[10px] text-emerald-600 font-sans italic">
+                                  ✓ ყველა მონიშნული ოთახი თავისუფალია ამ დღეს!
+                                </p>
+                              ) : (
+                                <div className="space-y-1 font-sans">
+                                  <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider">უკვე არსებული ჯავშნები სივრცეებში:</span>
+                                  <div className="flex flex-wrap gap-1">
+                                    {dayBookings.map((b) => (
+                                      <span
+                                        key={b.id}
+                                        className={`px-1.5 py-0.5 rounded text-[9px] font-bold font-mono border ${
+                                          b.status === 'approved'
+                                            ? 'bg-emerald-50 text-emerald-700 border-emerald-150'
+                                            : 'bg-amber-50 text-amber-700 border-amber-150'
+                                        }`}
+                                      >
+                                        [{b.roomName}] {b.durationHours}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Slots and people volume controllers */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  
+                  {/* Option for Full Day Reservation */}
+                  <div className="sm:col-span-2 bg-slate-100 p-3.5 rounded-xl border border-slate-200/60 shadow-2xs">
+                    <label className="flex items-start space-x-2.5 cursor-pointer select-none">
+                      <input
+                        id="form-full-day-checkbox"
+                        type="checkbox"
+                        checked={isFullDay}
+                        onChange={(e) => setIsFullDay(e.target.checked)}
+                        className="mt-0.5 h-4 w-4 rounded text-slate-900 border-slate-300 focus:ring-slate-500 cursor-pointer"
+                      />
+                      <div className="flex-1">
+                        <span className="block text-xs font-black text-slate-800">სრული დღით დაჯავშნა (Full Day)</span>
+                        <span className="block text-[10px] text-slate-500 mt-0.5 leading-relaxed font-sans">
+                          საათობრივის ნაცვლად მთელი დღით დაჯავშნა (12 საათიანი ბლოკი). ამ შემთხვევაში იმოქმედებს თითოეული ოთახისთვის განკუთვნილი დღიური ტარიფი.
+                        </span>
+                      </div>
+                    </label>
+                  </div>
+
+                  {/* Number of People */}
+                  <div>
+                    <label className="block text-xs font-black uppercase text-slate-450 tracking-wider mb-2">
+                      ადამიანთა რაოდენობა
+                    </label>
+                    <input
+                      id="form-people-input"
+                      type="number"
+                      min="1"
+                      value={numPeople}
+                      onChange={(e) => {
+                        const value = parseInt(e.target.value) || 1;
+                        setNumPeople(value);
+                      }}
+                      className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-semibold focus:outline-hidden font-sans"
+                      required
+                    />
+                  </div>
+
+                  {/* 24-Hour dropdown selects */}
+                  <div>
+                    <label className="block text-xs font-black uppercase text-slate-450 tracking-wider mb-2">
+                      სამუშაო შუალედი (24H)
+                    </label>
+                    <div className="flex space-x-1 items-center">
+                      <select
+                        id="form-start-time"
+                        value={startTime}
+                        onChange={(e) => setStartTime(e.target.value)}
+                        disabled={isFullDay}
+                        className={`w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-center font-mono focus:outline-hidden ${isFullDay ? 'opacity-40 cursor-not-allowed bg-slate-100' : ''}`}
+                        required={!isFullDay}
+                      >
+                        {Array.from({ length: 24 }).map((_, h) => {
+                          const hr = String(h).padStart(2, '0');
+                          return (
+                            <React.Fragment key={hr}>
+                              <option value={`${hr}:00`}>{hr}:00</option>
+                              <option value={`${hr}:30`}>{hr}:30</option>
+                            </React.Fragment>
+                          );
+                        })}
+                      </select>
+                      
+                      <span className="text-slate-400 font-bold">-</span>
+                      
+                      <select
+                        id="form-end-time"
+                        value={endTime}
+                        onChange={(e) => setEndTime(e.target.value)}
+                        disabled={isFullDay}
+                        className={`w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-center font-mono focus:outline-hidden ${isFullDay ? 'opacity-40 cursor-not-allowed bg-slate-100' : ''}`}
+                        required={!isFullDay}
+                      >
+                        {Array.from({ length: 24 }).map((_, h) => {
+                          const hr = String(h).padStart(2, '0');
+                          return (
+                            <React.Fragment key={hr}>
+                              <option value={`${hr}:00`}>{hr}:00</option>
+                              <option value={`${hr}:30`}>{hr}:30</option>
+                            </React.Fragment>
+                          );
+                        })}
+                        <option value="24:00">24:00</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Organizer Info with Renamed Placeholders */}
+                <div className="border-t border-slate-150 pt-5 space-y-4">
+                  <span className="block font-display font-extrabold text-slate-900 text-sm mb-1.5">
+                    კითხვარი ორგანიზატორისთვის
+                  </span>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 mb-1.5 flex items-center">
+                        <User2 className="h-3.5 w-3.5 mr-1 text-slate-400" /> სახელი *
+                      </label>
+                      <input
+                        id="form-first-name"
+                        type="text"
+                        value={firstName}
+                        onChange={(e) => setFirstName(e.target.value)}
+                        placeholder="გიორგი"
+                        className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-hidden font-sans"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 mb-1.5 flex items-center">
+                        <User2 className="h-3.5 w-3.5 mr-1 text-slate-400" /> გვარი *
+                      </label>
+                      <input
+                        id="form-last-name"
+                        type="text"
+                        value={lastName}
+                        onChange={(e) => setLastName(e.target.value)}
+                        placeholder="გიორგაძე"
+                        className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-hidden font-sans"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 mb-1.5 flex items-center">
+                        <Building2 className="h-3.5 w-3.5 mr-1 text-slate-400" /> ორგანიზაცია (არსებობის შემთხვევაში)
+                      </label>
+                      <input
+                        id="form-organization"
+                        type="text"
+                        value={organization}
+                        onChange={(e) => setOrganization(e.target.value)}
+                        placeholder="მაგ: არასამთავრობო ორგანიზაცია"
+                        className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-hidden font-sans"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 mb-1.5">
+                        მობილურის ნომერი *
+                      </label>
+                      <input
+                        id="form-phone"
+                        type="tel"
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
+                        placeholder="+995 599 000 000"
+                        className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-hidden font-sans"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-1.5">
+                      ელ-ფოსტა (ჯავშნის დასტურისა და ინვოისისთვის) *
+                    </label>
+                    <input
+                      id="form-email"
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="giorgi@domain.ge"
+                      className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-hidden font-sans"
+                      required
+                    />
+                  </div>
+                </div>
+
+                {/* Custom questions injection CMS mapping */}
+                {customQuestions.length > 0 && (
+                  <div className="border-t border-slate-200 pt-5 space-y-4">
+                    <span className="block font-display font-bold text-slate-800 text-xs uppercase tracking-wider">
+                      დამატებითი კითხვები
+                    </span>
+
+                    <div className="space-y-4">
+                      {customQuestions.map((q) => (
+                        <div key={q.id}>
+                          <label className="block text-xs font-bold text-slate-500 mb-1.5">
+                            {q.label} {q.required && '*'}
+                          </label>
+                          
+                          {q.type === 'textarea' ? (
+                            <textarea
+                              id={`form-custom-q-${q.id}`}
+                              value={customAnswers[q.label] || ''}
+                              onChange={(e) => handleCustomAnswerChange(q.label, e.target.value)}
+                              placeholder={q.placeholder}
+                              rows={3}
+                              className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-hidden font-sans"
+                              required={q.required}
+                            />
+                          ) : q.type === 'select' ? (
+                            <select
+                              id={`form-custom-q-${q.id}`}
+                              value={customAnswers[q.label] || ''}
+                              onChange={(e) => handleCustomAnswerChange(q.label, e.target.value)}
+                              className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-hidden font-sans cursor-pointer"
+                              required={q.required}
+                            >
+                              <option value="">{q.placeholder}</option>
+                              {q.options?.map((opt, oIndex) => (
+                                <option key={oIndex} value={opt}>{opt}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input
+                              id={`form-custom-q-${q.id}`}
+                              type="text"
+                              value={customAnswers[q.label] || ''}
+                              onChange={(e) => handleCustomAnswerChange(q.label, e.target.value)}
+                              placeholder={q.placeholder}
+                              className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-hidden font-sans"
+                              required={q.required}
+                            />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Real-time bookings overlaps conflict banner */}
+                {bookingConflict && (
+                  <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl text-rose-750 flex items-start space-x-2.5 text-xs sm:text-sm animate-fadeIn">
+                    <AlertTriangle className="h-5 w-5 shrink-0 text-rose-500" />
+                    <div>
+                      <span className="font-bold block text-rose-800">შერჩეული საათები დაკავებულია!</span>
+                      <span className="font-sans text-slate-600 block mt-0.5 leading-relaxed">
+                        დროის შუალედი ({startTime} - {endTime}) ნაწილობრივ ან სრულად ემთხვევა არსებულ ჯავშანს: <strong className="font-mono text-rose-700">{bookingConflict.durationHours}</strong>. გთხოვთ მიუთითოთ სხვა საათები.
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Subtotal, discounts presentation, and price totals */}
+                <div className="mt-8 p-5 bg-white border border-slate-150 rounded-2xl space-y-3.5 shadow-xs">
+                  <span className="block text-[10px] uppercase font-black text-slate-450 tracking-wider">ღირებულების ანგარიში (Invoice Breakdown)</span>
+                  
+                  <div className="space-y-1.5 text-xs sm:text-sm text-slate-600 border-b border-slate-100 pb-3">
+                    <div className="flex justify-between font-sans">
+                      <span>{isFullDay ? 'ჯამური დღიური საფასური:' : 'საწყისი საფასური:'}</span>
+                      <span className="font-bold text-slate-800 font-mono">₾{priceBreakdown.basePrice}</span>
+                    </div>
+
+                    {/* Room count multiplier info */}
+                    <div className="flex justify-between text-[11px] font-sans text-slate-450">
+                      <span>დეტალები:</span>
+                      {isFullDay ? (
+                        <span>{selectedRoomIds.length} ოთახი x {priceBreakdown.daysCount} დღე (დღიური ტარიფი)</span>
+                      ) : (
+                        <span>{selectedRoomIds.length} ოთახი x {calculatedHours} სთ x {priceBreakdown.daysCount} დღე</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                    <div>
+                      <span className="block text-[10px] uppercase font-bold text-amber-600 tracking-wider">საერთო გადასახდელი</span>
+                      <span className="font-display font-black text-2xl text-slate-900 font-mono">
+                        ₾{currentTotalPrice}
+                      </span>
+                    </div>
+                    
+                    <button
+                      id="submit-booking-btn"
+                      type="submit"
+                      className="w-full sm:w-auto px-6 py-3.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-black text-center transition-colors shadow-xs cursor-pointer uppercase letter tracking-wider leading-none"
+                    >
+                      ჯავშნის მოთხოვნა ➜
+                    </button>
+                  </div>
+                </div>
+
+                {/* Error Banner alerts */}
+                {errorMessage && (
+                  <div id="booking-error-alert" className="p-4 bg-rose-50 border border-rose-300 rounded-2xl text-rose-600 flex items-start space-x-2 text-sm animate-fadeIn">
+                    <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" />
+                    <span className="font-sans font-semibold">{errorMessage}</span>
+                  </div>
+                )}
+
+              </form>
+            )}
+          </div>
+        </div>
+
+      </div>
+
+      {/* SUCCESS CONFIRMATION MODAL POPUP (OVERLAY BACKDROP-BLUR) */}
+      {isSuccess && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-lg w-full border border-slate-150 p-8 sm:p-10 shadow-2xl relative text-center">
+            
+            <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-xs">
+              <CheckCircle className="h-10 w-10 animate-pulse" />
+            </div>
+
+            <h3 className="font-display font-extrabold text-2xl text-slate-900">
+              ჯავშანი წარმატებით გაიგზავნა!
+            </h3>
+
+            <p className="mt-4 text-slate-600 text-sm font-sans leading-relaxed">
+              მადლობა, თქვენი მოთხოვნა მიღებულია. ჰაბის ადმინისტრატორი განიხილავს ჯავშანს და თანხმობის შემთხვევაში მითითებულ ელ-ფოსტაზე გაგიზიარებთ <span className="font-bold text-slate-800">ინვოისს</span>, ხოლო უარყოფის შემთხვევაში შესაბამის შეტყობინებას.
+            </p>
+
+            <div className="mt-8 pt-6 border-t border-slate-200">
+              <button
+                type="button"
+                onClick={() => setIsSuccess(false)}
+                className="w-full sm:w-auto px-6 py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-sm font-bold shadow-xs cursor-pointer transition-colors"
+              >
+                დახურვა & ახალი დაჯავშნა
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* IMMERSIVE ROOM DETAILS & IMAGES GALLERY PLAYGROUND MODAL OVERLAY */}
+      {infoRoom && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/65 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[95vh] overflow-y-auto border border-slate-150 shadow-2xl relative">
+            
+            {/* Modal Header */}
+            <div className="p-6 pb-0 flex justify-between items-start">
+              <div>
+                <h3 className="font-display font-black text-xl text-slate-900">{infoRoom.name}</h3>
+                <div className="flex gap-1.5 mt-1 text-slate-800 text-xs font-black font-mono">
+                  <span className="bg-slate-100 px-2.5 py-1 rounded-lg">
+                    ₾{infoRoom.price}/სთ
+                  </span>
+                  <span className="bg-brand-50 text-brand-700 px-2.5 py-1 rounded-lg border border-brand-100">
+                    ₾{infoRoom.dayPrice || Math.round(infoRoom.price * 8)}/დღე
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setInfoRoom(null)}
+                className="p-1.5 bg-slate-100 hover:bg-slate-200 rounded-full text-slate-500 transition-colors cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Modal Tabs: Photos, 360°, YouTube Video */}
+            <div className="px-6 mt-4 border-b border-slate-100 flex gap-1 sm:gap-2">
+              <button
+                type="button"
+                onClick={() => setInfoActiveTab('photos')}
+                className={`pb-3 text-xs sm:text-sm font-bold border-b-2 transition-all px-2.5 cursor-pointer flex items-center gap-1.5 ${
+                  infoActiveTab === 'photos'
+                    ? 'border-brand-600 text-brand-700 font-extrabold'
+                    : 'border-transparent text-slate-450 hover:text-slate-600'
+                }`}
+              >
+                <span>ფოტოები ({infoRoom.imageUrls?.length || 1})</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setInfoActiveTab('panorama')}
+                className={`pb-3 text-xs sm:text-sm font-bold border-b-2 transition-all px-2.5 cursor-pointer flex items-center gap-1.5 ${
+                  infoActiveTab === 'panorama'
+                    ? 'border-brand-600 text-brand-700 font-extrabold'
+                    : 'border-transparent text-slate-450 hover:text-slate-600'
+                }`}
+              >
+                <Compass className="h-3.5 w-3.5" />
+                <span>360° ხედი</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setInfoActiveTab('video')}
+                className={`pb-3 text-xs sm:text-sm font-bold border-b-2 transition-all px-2.5 cursor-pointer flex items-center gap-1.5 ${
+                  infoActiveTab === 'video'
+                    ? 'border-brand-600 text-brand-700 font-extrabold'
+                    : 'border-transparent text-slate-450 hover:text-slate-600'
+                }`}
+              >
+                <Youtube className="h-3.5 w-3.5" />
+                <span>ვიდეო ტური</span>
+              </button>
+            </div>
+
+            {/* Modal Body depending on selected tab */}
+            {infoActiveTab === 'photos' && (
+              <RoomGallery images={infoRoom.imageUrls || [infoRoom.imageUrl]} />
+            )}
+
+            {infoActiveTab === 'panorama' && (
+              <div className="p-6">
+                <span className="block text-[10px] uppercase tracking-widest font-black text-slate-400 mb-2 font-mono">360° ვირტუალური ტური (Interactive Panoramas)</span>
+                <div className="relative aspect-video rounded-2xl overflow-hidden border border-slate-200 bg-slate-900 shadow-inner group">
+                  <iframe
+                    title="360 Panorama Viewer"
+                    src={infoRoom.panoramaUrl || `https://cdn.pannellum.org/2.5/pannellum.htm?panorama=https://pannellum.org/images/alma.jpg&autoLoad=true`}
+                    className="w-full h-full border-0 absolute inset-0"
+                    allowFullScreen
+                  />
+                  <div className="absolute top-3 left-3 bg-slate-900/85 text-white text-[10px] font-bold px-2.5 py-1.5 rounded-xl backdrop-blur-xs flex items-center gap-1.5 shadow-md select-none pointer-events-none transition-opacity duration-300">
+                    <Compass className="h-3.5 w-3.5 text-brand-400 animate-spin-slow" />
+                    <span>გამოიყენეთ მაუსი კუთხის შესაცვლელად (Interactive 360°)</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {infoActiveTab === 'video' && (
+              <div className="p-6">
+                <span className="block text-[10px] uppercase tracking-widest font-black text-slate-400 mb-2 font-mono">YouTube საინფორმაციო/სადემონსტრაციო რგოლი</span>
+                <div className="relative aspect-video rounded-2xl overflow-hidden border border-slate-200 bg-slate-950 shadow-inner">
+                  <iframe
+                    title="Room Video Tour"
+                    src={infoRoom.videoUrl || `https://www.youtube.com/embed/dQw4w9WgXcQ`}
+                    className="w-full h-full border-0 absolute inset-0"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Room Amenities list & metadata */}
+            <div className="px-6 pb-6 space-y-4">
+              <div>
+                <span className="block text-[10px] uppercase tracking-widest font-black text-slate-400 mb-1 font-mono">აღწერა</span>
+                <p className="text-xs sm:text-sm font-sans text-slate-600 leading-relaxed font-light">{infoRoom.description}</p>
+              </div>
+
+              <div>
+                <span className="block text-[10px] uppercase tracking-widest font-black text-slate-400 mb-2 font-mono">ოთახის რესურსები & აღჭურვილობა</span>
+                <div className="flex flex-wrap gap-2">
+                  {infoRoom.features.map((feat, index) => (
+                    <span
+                      key={index}
+                      className="px-3 py-1 bg-slate-50 border border-slate-150 rounded-xl text-xs font-semibold text-slate-705 flex items-center"
+                    >
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 mr-2 shrink-0"></span>
+                      {feat}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {/* Action selection state inside modal */}
+              <div className="pt-4 border-t border-slate-100 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const id = infoRoom.id;
+                    if (!selectedRoomIds.includes(id)) {
+                      setSelectedRoomIds(prev => [...prev, id]);
+                    } else {
+                      setSelectedRoomIds(prev => prev.filter(item => item !== id));
+                    }
+                    setInfoRoom(null);
+                  }}
+                  className={`px-5 py-2.5 rounded-xl text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer ${
+                    selectedRoomIds.includes(infoRoom.id)
+                      ? 'bg-rose-600 hover:bg-rose-700 text-white'
+                      : 'bg-slate-900 hover:bg-slate-800 text-white'
+                  }`}
+                >
+                  {selectedRoomIds.includes(infoRoom.id) ? (
+                    <>
+                      <X className="h-4 w-4" />
+                      <span>მონიშვნის მოხსნა</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="h-4 w-4" />
+                      <span>ოთახის მონიშვნა (Select)</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+            </div>
+
+          </div>
+        </div>
+      )}
+
+    </section>
+  );
+}
+
+// Custom Room Gallery interactive thumbnails view
+const RoomGallery = ({ images }: { images: string[] }) => {
+  const [activeImg, setActiveImg] = useState(images[0]);
+  return (
+    <div className="p-6 space-y-3">
+      <div className="w-full h-64 sm:h-80 bg-slate-50 border border-slate-150 rounded-2xl overflow-hidden relative shadow-2xs">
+        <img
+          src={activeImg}
+          alt="Active Room display"
+          referrerPolicy="no-referrer"
+          className="w-full h-full object-cover transition-all"
+        />
+      </div>
+      {images.length > 1 && (
+        <div className="grid grid-cols-3 gap-2 pb-1">
+          {images.map((img, i) => (
+            <button
+              key={i}
+              type="button"
+              onMouseEnter={() => setActiveImg(img)}
+              onClick={() => setActiveImg(img)}
+              className={`h-12 border rounded-xl overflow-hidden transition-all cursor-pointer ${
+                activeImg === img ? 'ring-2 ring-slate-900 border-none scale-98' : 'border-slate-150 hover:border-slate-300 opacity-80 hover:opacity-100'
+              }`}
+            >
+              <img
+                src={img}
+                alt="thumbnail representation"
+                referrerPolicy="no-referrer"
+                className="w-full h-full object-cover"
+              />
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
