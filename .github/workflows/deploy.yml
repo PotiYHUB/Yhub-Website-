@@ -37,15 +37,20 @@ jobs:
           # Install LFTP client (takes < 2 seconds)
           sudo apt-get update && sudo apt-get install -y lftp
           
-          # Deploying using LFTP with deep packet inspection (DPI) friendly configuration
-          # We use a shell heredoc (EOF) to perfectly handle any special character in passwords safely
+          # Clean FTP SERVER string (strip any ftp://, ftps://, sftp:// prefixes or :21 port suffixes)
+          CLEAN_SERVER=$(echo "$FTP_SERVER" | sed -E 's|^(ftp://|ftps://|sftp://)||' | sed -E 's|:[0-9]+$||')
+          echo "Connecting to: $CLEAN_SERVER"
+
+          # Deploying using LFTP with deep packet inspection (DPI) friendly configuration.
+          # We enable 'debug 10' so we see the exact connection log if it fails.
           lftp <<EOF
+          debug 10
           set ftp:ssl-allow no
           set ftp:passive-mode on
           set ftp:nop-interval 15
           set net:timeout 30
           set net:max-retries 2
-          open -u "${FTP_USERNAME}","${FTP_PASSWORD}" ftp://${FTP_SERVER}:21
+          open -u "${FTP_USERNAME}","${FTP_PASSWORD}" ftp://${CLEAN_SERVER}:21
           mirror --reverse --delete --verbose=3 ./dist/ /public_html/
           quit
           EOF
