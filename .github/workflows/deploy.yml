@@ -5,6 +5,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: write
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
@@ -28,53 +31,10 @@ jobs:
       - name: Copy .htaccess to dist
         run: cp public/.htaccess dist/.htaccess 2>/dev/null || cp .htaccess dist/.htaccess 2>/dev/null || true
 
-      - name: Sync Files to cPanel via FTP (Optimized to bypass cPanel/CSF Firewall blocks)
-        env:
-          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
-          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
-          FTP_SERVER: ${{ secrets.FTP_SERVER }}
-        run: |
-          # 1. Verification of Secrets
-          if [ -z "$FTP_SERVER" ] || [ -z "$FTP_USERNAME" ] || [ -z "$FTP_PASSWORD" ]; then
-            echo "::error::Missing deployment secrets! Please make sure FTP_SERVER, FTP_USERNAME, and FTP_PASSWORD are configured in your GitHub Repository under 'Settings > Secrets and variables > Actions'."
-            exit 1
-          fi
+      - name: Deploy Compiled Files to Production Branch
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          folder: dist # The built static files folder to push
+          branch: production # The temporary deployment branch that cPanel tracks
+          clean: true # Automatically remove old files no longer in dist
 
-          # Install LFTP client (takes < 2 seconds)
-          sudo apt-get update && sudo apt-get install -y lftp
-          
-          # 2. Securely Trim Whitespace and Clean Inputs
-          # This protects against copy-paste issues like leading/trailing spaces in secrets
-          CLEAN_SERVER=$(echo "$FTP_SERVER" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
-          CLEAN_USERNAME=$(echo "$FTP_USERNAME" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
-          CLEAN_PASSWORD=$(echo "$FTP_PASSWORD" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
-
-          # Strip protocol and paths to get pure domain/IP
-          CLEAN_SERVER=$(echo "$CLEAN_SERVER" | sed -E 's#^(ftp|ftps|sftp)://##' | sed -E 's#/.*##' | sed -E 's|:[0-9]+$||')
-
-          echo "Target Server: [$CLEAN_SERVER] (Whitespace cleaned)"
-          
-          # Export to environment so single-quoted heredoc can read them
-          export CLEAN_SERVER CLEAN_USERNAME CLEAN_PASSWORD
-
-          # Deploying using LFTP with Deep Packet Inspection (DPI) friendly plain FTP over Port 21.
-          # Standard SFTP/FTPS often times out because dynamic passive port negotiations are blocked by CSF firewall.
-          # Keeping the control channel unencrypted (ssl-allow no) lets the firewall conntrack helper see the PASV ports and open them.
-          lftp <<'EOF'
-          debug 10
-          set ftp:ssl-allow no
-          set ftp:passive-mode on
-          set ftp:nop-interval 15
-          set net:timeout 30
-          set net:max-retries 2
-          
-          # Open connection control channel
-          open ftp://$CLEAN_SERVER:21
-          
-          # Authenticate username and password securely (isolated as arguments - no comma splits!)
-          user "$CLEAN_USERNAME" "$CLEAN_PASSWORD"
-          
-          # Synchronize build files to public_html
-          mirror --reverse --delete --verbose=3 ./dist/ /public_html/
-          quit
-          EOF
