@@ -34,11 +34,17 @@ jobs:
           FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
           FTP_SERVER: ${{ secrets.FTP_SERVER }}
         run: |
+          # 1. Verification of Secrets
+          if [ -z "$FTP_SERVER" ] || [ -z "$FTP_USERNAME" ] || [ -z "$FTP_PASSWORD" ]; then
+            echo "::error::Missing deployment secrets! Please make sure FTP_SERVER, FTP_USERNAME, and FTP_PASSWORD are configured in your GitHub Repository under 'Settings > Secrets and variables > Actions'."
+            exit 1
+          fi
+
           # Install LFTP client (takes < 2 seconds)
           sudo apt-get update && sudo apt-get install -y lftp
           
-          # Clean FTP SERVER string (strip any ftp://, ftps://, sftp:// prefixes or :21 port suffixes)
-          CLEAN_SERVER=$(echo "$FTP_SERVER" | sed -E 's|^(ftp://|ftps://|sftp://)||' | sed -E 's|:[0-9]+$||')
+          # Clean FTP SERVER string (strip any ftp://, ftps://, sftp:// prefixes, trailing slashes, paths, or :21 port suffixes)
+          CLEAN_SERVER=$(echo "$FTP_SERVER" | sed -E 's#^(ftp|ftps|sftp)://##' | sed -E 's#/.*##' | sed -E 's|:[0-9]+$||')
           echo "Connecting to: $CLEAN_SERVER"
 
           # Deploying using LFTP with deep packet inspection (DPI) friendly configuration.
