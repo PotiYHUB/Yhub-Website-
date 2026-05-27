@@ -29,24 +29,23 @@ jobs:
         run: cp public/.htaccess dist/.htaccess 2>/dev/null || cp .htaccess dist/.htaccess 2>/dev/null || true
 
       - name: Sync Files to cPanel via FTP (Optimized to bypass cPanel/CSF Firewall blocks)
+        env:
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
         run: |
           # Install LFTP client (takes < 2 seconds)
           sudo apt-get update && sudo apt-get install -y lftp
           
-          # Deploying using LFTP.
-          #
-          # Troubleshooting Guide for data connection timeouts/failures:
-          # 1. 'set ftp:ssl-allow no' (PLAIN FTP) - Paradoxically, disabling SSL on shared cPanel hosting is the MOST reliable way to deploy.
-          #    When firewall helpers (like CSF or conntrack) inspect the plaintext control packets, they dynamically open the negotiated PASV data ports.
-          #    If SSL is enabled, the control channel is encrypted, the firewall cannot read the negotiated ports, and blocks them, causing a timeout!
-          # 2. 'set ftp:passive-mode on' - Try PASV mode first. If it completely fails, you can toggle it to 'off' for Active Mode.
-          lftp -c "
-            set ftp:ssl-allow no;
-            set ftp:passive-mode on;
-            set ftp:nop-interval 15;
-            set net:timeout 30;
-            set net:max-retries 2;
-            open -u '${{ secrets.FTP_USERNAME }}','${{ secrets.FTP_PASSWORD }}' ftp://${{ secrets.FTP_SERVER }}:21;
-            mirror --reverse --delete --verbose=3 ./dist/ /public_html/;
-            quit;
-          "
+          # Deploying using LFTP with deep packet inspection (DPI) friendly configuration
+          # We use a shell heredoc (EOF) to perfectly handle any special character in passwords safely
+          lftp <<EOF
+          set ftp:ssl-allow no
+          set ftp:passive-mode on
+          set ftp:nop-interval 15
+          set net:timeout 30
+          set net:max-retries 2
+          open -u "${FTP_USERNAME}","${FTP_PASSWORD}" ftp://${FTP_SERVER}:21
+          mirror --reverse --delete --verbose=3 ./dist/ /public_html/
+          quit
+          EOF
