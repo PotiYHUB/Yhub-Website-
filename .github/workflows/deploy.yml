@@ -43,20 +43,38 @@ jobs:
           # Install LFTP client (takes < 2 seconds)
           sudo apt-get update && sudo apt-get install -y lftp
           
-          # Clean FTP SERVER string (strip any ftp://, ftps://, sftp:// prefixes, trailing slashes, paths, or :21 port suffixes)
-          CLEAN_SERVER=$(echo "$FTP_SERVER" | sed -E 's#^(ftp|ftps|sftp)://##' | sed -E 's#/.*##' | sed -E 's|:[0-9]+$||')
-          echo "Connecting to: $CLEAN_SERVER"
+          # 2. Securely Trim Whitespace and Clean Inputs
+          # This protects against copy-paste issues like leading/trailing spaces in secrets
+          CLEAN_SERVER=$(echo "$FTP_SERVER" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+          CLEAN_USERNAME=$(echo "$FTP_USERNAME" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+          CLEAN_PASSWORD=$(echo "$FTP_PASSWORD" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
 
-          # Deploying using LFTP with deep packet inspection (DPI) friendly configuration.
-          # We enable 'debug 10' so we see the exact connection log if it fails.
-          lftp <<EOF
+          # Strip protocol and paths to get pure domain/IP
+          CLEAN_SERVER=$(echo "$CLEAN_SERVER" | sed -E 's#^(ftp|ftps|sftp)://##' | sed -E 's#/.*##' | sed -E 's|:[0-9]+$||')
+
+          echo "Target Server: [$CLEAN_SERVER] (Whitespace cleaned)"
+          
+          # Export to environment so single-quoted heredoc can read them
+          export CLEAN_SERVER CLEAN_USERNAME CLEAN_PASSWORD
+
+          # Deploying using LFTP with Deep Packet Inspection (DPI) friendly plain FTP over Port 21.
+          # Standard SFTP/FTPS often times out because dynamic passive port negotiations are blocked by CSF firewall.
+          # Keeping the control channel unencrypted (ssl-allow no) lets the firewall conntrack helper see the PASV ports and open them.
+          lftp <<'EOF'
           debug 10
           set ftp:ssl-allow no
           set ftp:passive-mode on
           set ftp:nop-interval 15
           set net:timeout 30
           set net:max-retries 2
-          open -u "${FTP_USERNAME}","${FTP_PASSWORD}" ftp://${CLEAN_SERVER}:21
+          
+          # Open connection control channel
+          open ftp://$CLEAN_SERVER:21
+          
+          # Authenticate username and password securely (isolated as arguments - no comma splits!)
+          user "$CLEAN_USERNAME" "$CLEAN_PASSWORD"
+          
+          # Synchronize build files to public_html
           mirror --reverse --delete --verbose=3 ./dist/ /public_html/
           quit
           EOF
