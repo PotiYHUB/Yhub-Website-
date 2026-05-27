@@ -28,14 +28,17 @@ jobs:
       - name: Copy .htaccess to dist
         run: cp public/.htaccess dist/.htaccess 2>/dev/null || cp .htaccess dist/.htaccess 2>/dev/null || true
 
-      - name: Sync Files to cPanel via FTP
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
-        with:
-          server: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: ./dist/
-          server-dir: /public_html/
-          protocol: ftps
-          port: 21
-          security: loose
+      - name: Sync Files to cPanel via SFTP (Highly Recommended to bypass Firewall blocks)
+        run: |
+          # Install LFTP client (takes <2 seconds)
+          sudo apt-get update && sudo apt-get install -y lftp
+          
+          # Run deployment over SFTP (encapsulated over standard SSH Port 22 - no passive firewall blocks!)
+          # Note: Uses your existing FTP_USERNAME, FTP_PASSWORD, and FTP_SERVER secrets.
+          # If your hosting uses a non-standard SSH port, change 22 below to that port (e.g. 2222, 65002)
+          lftp -c "
+            set sftp:auto-confirm yes;
+            open -u '${{ secrets.FTP_USERNAME }}','${{ secrets.FTP_PASSWORD }}' sftp://${{ secrets.FTP_SERVER }}:22;
+            mirror --reverse --delete --verbose=3 ./dist/ /public_html/;
+            quit;
+          "
