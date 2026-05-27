@@ -28,17 +28,25 @@ jobs:
       - name: Copy .htaccess to dist
         run: cp public/.htaccess dist/.htaccess 2>/dev/null || cp .htaccess dist/.htaccess 2>/dev/null || true
 
-      - name: Sync Files to cPanel via SFTP (Highly Recommended to bypass Firewall blocks)
+      - name: Sync Files to cPanel via FTP (Optimized to bypass cPanel/CSF Firewall blocks)
         run: |
-          # Install LFTP client (takes <2 seconds)
+          # Install LFTP client (takes < 2 seconds)
           sudo apt-get update && sudo apt-get install -y lftp
           
-          # Run deployment over SFTP (encapsulated over standard SSH Port 22 - no passive firewall blocks!)
-          # Note: Uses your existing FTP_USERNAME, FTP_PASSWORD, and FTP_SERVER secrets.
-          # If your hosting uses a non-standard SSH port, change 22 below to that port (e.g. 2222, 65002)
+          # Deploying using LFTP.
+          #
+          # Troubleshooting Guide for data connection timeouts/failures:
+          # 1. 'set ftp:ssl-allow no' (PLAIN FTP) - Paradoxically, disabling SSL on shared cPanel hosting is the MOST reliable way to deploy.
+          #    When firewall helpers (like CSF or conntrack) inspect the plaintext control packets, they dynamically open the negotiated PASV data ports.
+          #    If SSL is enabled, the control channel is encrypted, the firewall cannot read the negotiated ports, and blocks them, causing a timeout!
+          # 2. 'set ftp:passive-mode on' - Try PASV mode first. If it completely fails, you can toggle it to 'off' for Active Mode.
           lftp -c "
-            set sftp:auto-confirm yes;
-            open -u '${{ secrets.FTP_USERNAME }}','${{ secrets.FTP_PASSWORD }}' sftp://${{ secrets.FTP_SERVER }}:22;
+            set ftp:ssl-allow no;
+            set ftp:passive-mode on;
+            set ftp:nop-interval 15;
+            set net:timeout 30;
+            set net:max-retries 2;
+            open -u '${{ secrets.FTP_USERNAME }}','${{ secrets.FTP_PASSWORD }}' ftp://${{ secrets.FTP_SERVER }}:21;
             mirror --reverse --delete --verbose=3 ./dist/ /public_html/;
             quit;
           "
