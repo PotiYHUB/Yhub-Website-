@@ -3,12 +3,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Room, Booking, CustomQuestion, HubItem, HubCategory } from '../types';
 import AdminCalendar from './AdminCalendar';
 import { 
   Check, X, Plus, Trash2, Edit, Calendar, Users, DollarSign, Mail, 
-  Clock, ShieldAlert, FileText, LayoutList, ListPlus, Send, MessageSquarePlus, Sparkles, HelpCircle, Settings as SettingsIcon, Percent
+  Clock, ShieldAlert, FileText, LayoutList, ListPlus, Send, MessageSquarePlus, Sparkles, HelpCircle, Settings as SettingsIcon, Percent,
+  ArrowUp, ArrowDown, Table, Download, Globe, Eye, Share2, Search
 } from 'lucide-react';
 
 interface AdminPanelProps {
@@ -28,6 +29,9 @@ interface AdminPanelProps {
   onDeleteQuestion: (id: string) => void;
   onAddHubItem: (item: HubItem) => void;
   onDeleteHubItem: (id: string) => void;
+  onDeleteBooking: (id: string) => void;
+  onReorderRoom?: (id: string, direction: 'up' | 'down') => void;
+  onReorderHubItem?: (id: string, direction: 'up' | 'down') => void;
 }
 
 export default function AdminPanel({
@@ -46,9 +50,34 @@ export default function AdminPanel({
   onAddQuestion,
   onDeleteQuestion,
   onAddHubItem,
-  onDeleteHubItem
+  onDeleteHubItem,
+  onDeleteBooking,
+  onReorderRoom,
+  onReorderHubItem
 }: AdminPanelProps) {
   const [activeAdminTab, setActiveAdminTab] = useState<'bookings' | 'rooms' | 'questions' | 'hub' | 'emails' | 'calendar' | 'settings'>('bookings');
+  
+  // SEO Local States for Live Metadata Previews
+  const [seoTitle, setSeoTitle] = useState('');
+  const [seoDescription, setSeoDescription] = useState('');
+  const [seoKeywords, setSeoKeywords] = useState('');
+  const [seoImage, setSeoImage] = useState('');
+  const [seoGoogleAnalytics, setSeoGoogleAnalytics] = useState('');
+  const [seoRobotIndex, setSeoRobotIndex] = useState(true);
+  const [hasInitializedSeo, setHasInitializedSeo] = useState(false);
+
+  // Sync with bookingSettings once loaded
+  useEffect(() => {
+    if (bookingSettings && !hasInitializedSeo) {
+      setSeoTitle(bookingSettings.seoTitle ?? 'ფოთის ახალგაზრდული ჰაბი | Poti Youth Hub');
+      setSeoDescription(bookingSettings.seoDescription ?? 'განათლების, ტექნოლოგიების, კარიერული ზრდისა და კულტურული განვითარების ცენტრი ქალაქ ფოთში. შემოგვიერთდი და მიიღე მონაწილეობა ჰაბის აქტივობებში.');
+      setSeoKeywords(bookingSettings.seoKeywords ?? 'ფოთი, ახალგაზრდობა, ჰაბი, ტრენინგი, კარიერა, სივრცე');
+      setSeoImage(bookingSettings.seoImage ?? 'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?auto=format&fit=crop&w=1200&h=630&q=80');
+      setSeoGoogleAnalytics(bookingSettings.seoGoogleAnalytics ?? 'G-XXXXXXXXXX');
+      setSeoRobotIndex(bookingSettings.seoRobotIndex ?? true);
+      setHasInitializedSeo(true);
+    }
+  }, [bookingSettings, hasInitializedSeo]);
   
   // Filtering states
   const [bookingFilter, setBookingFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
@@ -90,6 +119,115 @@ export default function AdminPanel({
       document.head.appendChild(script);
     } else {
       runHtml2Pdf();
+    }
+  };
+
+  // Google Spreadsheet Modulations
+  const [isSpreadsheetOpen, setIsSpreadsheetOpen] = useState(false);
+  const [spreadsheetTab, setSpreadsheetTab] = useState<'rooms' | 'bookings'>('rooms');
+  const [sheetRooms, setSheetRooms] = useState<any[]>([]);
+  const [sheetBookings, setSheetBookings] = useState<any[]>([]);
+  const [activeCell, setActiveCell] = useState<{ id: string; field: string } | null>(null);
+
+  const initSpreadsheetData = () => {
+    setSheetRooms(rooms.map((r, idx) => ({
+      rowNum: idx + 2,
+      id: r.id,
+      name: r.name,
+      order: r.order !== undefined ? r.order : (idx + 1),
+      capacity: r.capacity || 10,
+      price: r.price || 15,
+      dayPrice: r.dayPrice || Math.round((r.price || 15) * 8),
+      bookingsCount: bookings.filter(b => b.roomId.includes(r.id)).length,
+      earnings: bookings.filter(b => b.roomId.includes(r.id) && b.status === 'approved').reduce((acc, b) => acc + (b.totalPrice || 0), 0)
+    })));
+
+    setSheetBookings(bookings.map((b, idx) => ({
+      rowNum: idx + 2,
+      id: b.id,
+      roomName: b.roomName,
+      date: b.date,
+      durationHours: b.durationHours,
+      firstName: b.firstName,
+      lastName: b.lastName,
+      organization: b.organization || '',
+      email: b.email,
+      phone: b.phone,
+      totalPrice: b.totalPrice,
+      status: b.status
+    })));
+  };
+
+  const handleUpdateSheetRoom = (roomId: string, field: string, value: any) => {
+    setSheetRooms(prev => prev.map(item => {
+      if (item.id === roomId) {
+        return { ...item, [field]: value };
+      }
+      return item;
+    }));
+  };
+
+  const handleUpdateSheetBooking = (bookingId: string, field: string, value: any) => {
+    setSheetBookings(prev => prev.map(item => {
+      if (item.id === bookingId) {
+        return { ...item, [field]: value };
+      }
+      return item;
+    }));
+  };
+
+  const handleExportCSV = () => {
+    let csvContent = "\uFEFF"; // Add UTF-8 BOM so MS Excel opens Georgian characters perfectly!
+    if (spreadsheetTab === 'rooms') {
+      csvContent += "რიგი,ოთახის ID,ოთახის დასახელება,რიგითობა,ტევადობა,საათობრივი საფასური (₾),დღიური საფასური (₾),ჯავშნების რაოდენობა,ჯამური შემოსავალი (₾)\n";
+      sheetRooms.forEach((r, idx) => {
+        csvContent += `${idx + 2},${r.id},"${r.name.replace(/"/g, '""')}",${r.order},${r.capacity},${r.price},${r.dayPrice},${r.bookingsCount},${r.earnings}\n`;
+      });
+    } else {
+      csvContent += "რიგი,ჯავშნის ID,ოთახის დასახელება,თარიღი,ხანგრძლივობა,სახელი,გვარი,ორგანიზაცია,ელ-ფოსტა,ტელეფონი,საერთო ფასი (₾),სტატუსი\n";
+      sheetBookings.forEach((b, idx) => {
+        csvContent += `${idx + 2},RSV-${b.id},"${b.roomName.replace(/"/g, '""')}",${b.date},"${b.durationHours}",${b.firstName},${b.lastName},"${b.organization.replace(/"/g, '""')}",${b.email},${b.phone},${b.totalPrice},${b.status}\n`;
+      });
+    }
+    const blob = new Blob([csvContent], { type: "application/vnd.ms-excel;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", `YHub_Poti_${spreadsheetTab === 'rooms' ? 'Rooms_Order' : 'Bookings_Report'}_${new Date().toISOString().substring(0, 10)}.xls`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleSyncSpreadsheet = async () => {
+    try {
+      if (spreadsheetTab === 'rooms') {
+        for (const sr of sheetRooms) {
+          const original = rooms.find(r => r.id === sr.id);
+          if (original) {
+            if (
+              original.order !== Number(sr.order) || 
+              original.capacity !== Number(sr.capacity) || 
+              original.price !== Number(sr.price) || 
+              original.dayPrice !== Number(sr.dayPrice)
+            ) {
+              await onUpdateRoom({
+                ...original,
+                order: Number(sr.order),
+                capacity: Number(sr.capacity),
+                price: Number(sr.price),
+                dayPrice: Number(sr.dayPrice)
+              });
+            }
+          }
+        }
+        alert('მონაცემები წარმატებით სინქრონიზდა ბაზასთან!');
+      } else {
+        alert('შენიშვნა: ჯავშნების ცხრილი განკუთვნილია მხოლოდ საყურებლად და საექსპორტოდ.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('რედაქტირებულ მონაცემთა შენახვა/სინქრონიზაცია ვერ მოხერხდა.');
     }
   };
 
@@ -435,20 +573,33 @@ export default function AdminPanel({
                     <p className="text-slate-500 text-xs font-sans mt-1">მართეთ და განიხილეთ შემოსული განაცხადები რეალურ დროში.</p>
                   </div>
 
-                  <div className="flex flex-wrap gap-1.5 bg-slate-50 p-1.5 rounded-xl border border-slate-100">
-                    {(['all', 'pending', 'approved', 'rejected'] as const).map((filter) => (
-                      <button
-                        key={filter}
-                        onClick={() => setBookingFilter(filter)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider cursor-pointer ${
-                          bookingFilter === filter
-                            ? 'bg-slate-900 text-white'
-                            : 'text-slate-500 hover:bg-slate-100'
-                        }`}
-                      >
-                        {filter === 'all' ? 'ყველა' : filter === 'pending' ? 'მომლოდინე' : filter === 'approved' ? 'დადასტურ.' : 'უარყოფ.'}
-                      </button>
-                    ))}
+                  <div className="flex flex-wrap gap-2 items-center">
+                    <button
+                      onClick={() => {
+                        initSpreadsheetData();
+                        setIsSpreadsheetOpen(true);
+                      }}
+                      className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-97 text-white text-xs font-black rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer shadow-md shadow-emerald-100 border border-emerald-500"
+                    >
+                      <Table className="h-3.5 w-3.5" />
+                      <span>ფორმატი</span>
+                    </button>
+
+                    <div className="flex flex-wrap gap-1.5 bg-slate-50 p-1.5 rounded-xl border border-slate-100">
+                      {(['all', 'pending', 'approved', 'rejected'] as const).map((filter) => (
+                        <button
+                          key={filter}
+                          onClick={() => setBookingFilter(filter)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider cursor-pointer ${
+                            bookingFilter === filter
+                              ? 'bg-slate-900 text-white'
+                              : 'text-slate-500 hover:bg-slate-100'
+                          }`}
+                        >
+                          {filter === 'all' ? 'ყველა' : filter === 'pending' ? 'მომლოდინე' : filter === 'approved' ? 'დადასტურ.' : 'უარყოფ.'}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
@@ -584,6 +735,15 @@ export default function AdminPanel({
                                 უარყოფის მიზეზი: "{b.adminNotes}"
                               </div>
                             )}
+
+                            <button
+                              onClick={() => onDeleteBooking(b.id)}
+                              className="px-3 py-2 bg-slate-100 hover:bg-red-50 hover:text-red-700 hover:border-red-200 transition-all text-slate-600 text-xs font-bold rounded-xl flex items-center space-x-1 cursor-pointer border border-slate-200"
+                              title="ჯავშნის წაშლა"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              <span>წაშლა</span>
+                            </button>
                           </div>
                         </div>
 
@@ -637,23 +797,37 @@ export default function AdminPanel({
                     <p className="text-slate-500 text-xs font-sans mt-1">დაამატეთ ახალი სივრცეები, განუსაზღვრეთ ტევადობა და საფასური.</p>
                   </div>
                   
-                  <button
-                    id="admin-add-room-btn"
-                    onClick={() => {
-                      setEditRoomId(null);
-                      setRoomName('');
-                      setRoomDesc('');
-                      setRoomCap(10);
-                      setRoomPrice(15);
-                      setRoomImg('');
-                      setRoomFeatures('');
-                      setShowRoomForm(!showRoomForm);
-                    }}
-                    className="px-4 py-2 bg-slate-900 hover:bg-slate-850 text-white text-xs font-bold rounded-xl flex items-center space-x-1 cursor-pointer shadow-xs"
-                  >
-                    <Plus className="h-4 w-4" />
-                    <span>ახალი ოთახის დამატება</span>
-                  </button>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        initSpreadsheetData();
+                        setIsSpreadsheetOpen(true);
+                      }}
+                      className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-97 text-white text-xs font-black rounded-xl transition-all flex items-center space-x-1.5 cursor-pointer shadow-md shadow-emerald-50 border border-emerald-500"
+                    >
+                      <Table className="h-3.5 w-3.5" />
+                      <span>ფორმატი</span>
+                    </button>
+
+                    <button
+                      id="admin-add-room-btn"
+                      onClick={() => {
+                        setEditRoomId(null);
+                        setRoomName('');
+                        setRoomDesc('');
+                        setRoomCap(10);
+                        setRoomPrice(15);
+                        setRoomImg('');
+                        setRoomFeatures('');
+                        setShowRoomForm(!showRoomForm);
+                      }}
+                      className="px-4 py-2 bg-slate-900 hover:bg-slate-850 text-white text-xs font-bold rounded-xl flex items-center space-x-1 cursor-pointer shadow-xs"
+                    >
+                      <Plus className="h-4 w-4" />
+                      <span>ახალი ოთახის დამატება</span>
+                    </button>
+                  </div>
                 </div>
 
                 {/* New/edit room drawer form */}
@@ -834,7 +1008,25 @@ export default function AdminPanel({
 
                       <div className="flex justify-between items-center text-xs font-medium border-t border-slate-150 pt-3 mt-2">
                         <span className="text-slate-450">ტევადობა: {room.capacity} კაცი</span>
-                        <div className="flex space-x-1.5">
+                        <div className="flex space-x-1.5 items-center">
+                          {onReorderRoom && (
+                            <div className="flex space-x-1 border-r border-slate-200 pr-2 mr-1">
+                              <button
+                                onClick={() => onReorderRoom(room.id, 'up')}
+                                className="p-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-md cursor-pointer transition-colors"
+                                title="ზემოთ გადანაცვლება"
+                              >
+                                <ArrowUp className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                onClick={() => onReorderRoom(room.id, 'down')}
+                                className="p-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-md cursor-pointer transition-colors"
+                                title="ქვემოთ გადანაცვლება"
+                              >
+                                <ArrowDown className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          )}
                           <button
                             id={`admin-room-edit-${room.id}`}
                             onClick={() => handleEditRoom(room)}
@@ -975,6 +1167,7 @@ export default function AdminPanel({
                       </div>
                       
                       <button
+                        type="button"
                         id={`admin-question-delete-${q.id}`}
                         onClick={() => onDeleteQuestion(q.id)}
                         className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg cursor-pointer transition-colors"
@@ -995,10 +1188,11 @@ export default function AdminPanel({
                 <div className="flex justify-between items-center border-b border-slate-100 pb-5 mb-6">
                   <div>
                     <h2 className="font-display font-black text-xl text-slate-900">კონტენტის მართვა</h2>
-                    <p className="text-slate-500 text-xs font-sans mt-1">მართეთ ბლოგები სიახლეები, ტრენინგები, ვაკანსიები და კონკურსები.</p>
+                    <p className="text-slate-500 text-xs font-sans mt-1">მართეთ ბლოგები, სიახლეები, ტრენინგები, ვაკანსიები და კონკურსები.</p>
                   </div>
 
                   <button
+                    type="button"
                     id="admin-hub-add-btn"
                     onClick={() => setShowHubForm(!showHubForm)}
                     className="px-4 py-2 bg-slate-950 hover:bg-slate-800 text-white text-xs font-bold rounded-xl flex items-center space-x-1 shadow-xs cursor-pointer"
@@ -1025,6 +1219,7 @@ export default function AdminPanel({
                           <option value="news">სიახლე / ბლოგი</option>
                           <option value="training">ტრენინგები</option>
                           <option value="contest">კონკურსები</option>
+                          <option value="vacancy">ვაკანსიები</option>
                         </select>
                       </div>
 
@@ -1068,56 +1263,69 @@ export default function AdminPanel({
                             className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs focus:outline-hidden"
                           />
                         </div>
+
                         <div>
-                          <label className="block text-[10px] font-bold text-slate-500 mb-1">ჩატარების ადგილი (ტრენინგი/კონკ.)</label>
+                          <label className="block text-xs font-bold text-slate-500 mb-1">ლოკაცია</label>
                           <input
                             id="admin-hub-location"
                             type="text"
                             value={hubLocation}
                             onChange={(e) => setHubLocation(e.target.value)}
-                            placeholder="მაგ: მედიალაბი"
-                            className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs focus:outline-hidden font-sans"
+                            placeholder="მაგ: ფოთის ჰაბი, მეორე სართული"
+                            className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs focus:outline-hidden"
+                          />
+                        </div>
+
+                        {hubCat === 'vacancy' && (
+                          <div className="sm:col-span-2">
+                            <label className="block text-xs font-bold text-slate-500 mb-1">ანაზღაურება / სახელფასო ბადე</label>
+                            <input
+                              id="admin-hub-salary"
+                              type="text"
+                              value={hubSalary}
+                              onChange={(e) => setHubSalary(e.target.value)}
+                              placeholder="მაგ: 1200 - 1500 GEL"
+                              className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs focus:outline-hidden"
+                            />
+                          </div>
+                        )}
+
+                        <div className="sm:col-span-2">
+                          <label className="block text-xs font-bold text-slate-500 mb-1">მოთხოვნები (თითო ხაზზე თითო მოთხოვნა)</label>
+                          <textarea
+                            id="admin-hub-reqs"
+                            rows={3}
+                            value={hubReqs}
+                            onChange={(e) => setHubReqs(e.target.value)}
+                            placeholder="მაგ: რეაქტის ცოდნა&#10;ინგლისურის ცოდნა"
+                            className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs focus:outline-hidden resize-none"
                           />
                         </div>
                       </div>
                     )}
 
-                    <div>
-                      <label className="block text-xs font-bold text-slate-500 mb-1">გარეკანის სურათის ბმული</label>
-                      <input
-                        id="admin-hub-cover"
-                        type="url"
-                        value={hubCover}
-                        onChange={(e) => setHubCover(e.target.value)}
-                        placeholder="https://images.unsplash.com/..."
-                        className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-sans focus:outline-hidden"
-                      />
-                    </div>
-
-                    {hubCat !== 'news' && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-[10px] font-bold text-slate-500 mb-1">
-                          პირობები & მოთხოვნები (თითო ხაზზე ჩაწერეთ თითო მოთხოვნა)
-                        </label>
-                        <textarea
-                          id="admin-hub-reqs"
-                          value={hubReqs}
-                          onChange={(e) => setHubReqs(e.target.value)}
-                          placeholder="ასაკი: 15-29 წელი&#10;საბაზისო კომპიუტერული უნარები"
-                          rows={2}
-                          className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-sans focus:outline-hidden"
+                        <label className="block text-xs font-bold text-slate-500 mb-1">სურათის ლინკი (Cover Image / URL) *</label>
+                        <input
+                          id="admin-hub-cover"
+                          type="text"
+                          value={hubCover}
+                          onChange={(e) => setHubCover(e.target.value)}
+                          placeholder="https://images.unsplash.com/... ან ატვირთული ფოტოს ლინკი"
+                          className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs focus:outline-hidden font-mono"
                         />
                       </div>
-                    )}
+                    </div>
 
                     <div>
-                      <label className="block text-xs font-bold text-slate-500 mb-1">სრული სტატია / აღწერა *</label>
+                      <label className="block text-xs font-bold text-slate-500 mb-1">პუბლიკაციის სრული ტექსტი *</label>
                       <textarea
                         id="admin-hub-content"
+                        rows={6}
                         value={hubContent}
                         onChange={(e) => setHubContent(e.target.value)}
-                        placeholder="დაწერეთ პუბლიკაციის სრული ტექსტი..."
-                        rows={5}
+                        placeholder="შეიყვანეთ პოსტის სრული ტექსტი..."
                         className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-sans focus:outline-hidden"
                         required
                       />
@@ -1128,7 +1336,7 @@ export default function AdminPanel({
                         id="admin-hub-cancel"
                         type="button"
                         onClick={() => setShowHubForm(false)}
-                        className="px-4 py-2 bg-white text-slate-605 border border-slate-200 rounded-lg text-xs font-semibold cursor-pointer"
+                        className="px-4 py-2 bg-white text-slate-600 border border-slate-200 rounded-lg text-xs font-semibold cursor-pointer"
                       >
                         გაუქმება
                       </button>
@@ -1157,21 +1365,44 @@ export default function AdminPanel({
                         <div className="truncate">
                           <div className="flex items-center space-x-2">
                             <span className="font-semibold text-slate-800 text-sm truncate">{item.title}</span>
-                            <span className="bg-slate-200/60 text-slate-900 text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md">
+                            <span className="bg-slate-200/60 text-slate-700 text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md">
                               {item.category}
                             </span>
                           </div>
-                          <span className="text-[10px] text-slate-400 font-mono mt-0.5 block">გამოქყვეყნდა: {item.date}</span>
+                          <span className="text-[10px] text-slate-400 font-mono mt-0.5 block">გამოქვეყნდა: {item.date}</span>
                         </div>
                       </div>
 
-                      <button
-                        id={`admin-hub-delete-${item.id}`}
-                        onClick={() => onDeleteHubItem(item.id)}
-                        className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg cursor-pointer transition-colors"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                      <div className="flex items-center space-x-1.5">
+                        {onReorderHubItem && (
+                          <div className="flex space-x-1 border-r border-slate-200 pr-2 mr-1">
+                            <button
+                              type="button"
+                              onClick={() => onReorderHubItem(item.id, 'up')}
+                              className="p-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-md cursor-pointer transition-colors"
+                              title="ზემოთ გადანაცვლება"
+                            >
+                              <ArrowUp className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onReorderHubItem(item.id, 'down')}
+                              className="p-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-md cursor-pointer transition-colors"
+                              title="ქვემოთ გადანაცვლება"
+                            >
+                              <ArrowDown className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          id={`admin-hub-delete-${item.id}`}
+                          onClick={() => onDeleteHubItem(item.id)}
+                          className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg cursor-pointer transition-colors"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1254,6 +1485,16 @@ export default function AdminPanel({
                   const invoiceIban = formData.get('invoiceIban') as string;
                   const invoiceFooter = formData.get('invoiceFooter') as string;
 
+                  const footerTextUnderLogo = formData.get('footerTextUnderLogo') as string;
+                  const stat1Value = formData.get('stat1Value') as string;
+                  const stat1Label = formData.get('stat1Label') as string;
+                  const stat2Value = formData.get('stat2Value') as string;
+                  const stat2Label = formData.get('stat2Label') as string;
+                  const stat3Value = formData.get('stat3Value') as string;
+                  const stat3Label = formData.get('stat3Label') as string;
+                  const stat4Value = formData.get('stat4Value') as string;
+                  const stat4Label = formData.get('stat4Label') as string;
+
                   onUpdateSettings({
                     ...bookingSettings,
                     hubAddress,
@@ -1264,9 +1505,23 @@ export default function AdminPanel({
                     invoiceOrgName,
                     invoiceBankName,
                     invoiceIban,
-                    invoiceFooter
+                    invoiceFooter,
+                    footerTextUnderLogo,
+                    stat1Value,
+                    stat1Label,
+                    stat2Value,
+                    stat2Label,
+                    stat3Value,
+                    stat3Label,
+                    stat4Value,
+                    stat4Label,
+                    seoTitle,
+                    seoDescription,
+                    seoKeywords,
+                    seoImage,
+                    seoGoogleAnalytics,
+                    seoRobotIndex
                   });
-                  alert('პარამეტრები წარმატებით შეინახა!');
                 }} className="space-y-6">
                   
                   {/* Part A: Contacts */}
@@ -1388,6 +1643,319 @@ export default function AdminPanel({
                     </div>
                   </div>
 
+                  {/* Part C: Design & Homepage Statistics */}
+                  <div className="space-y-4 pt-4 border-t border-slate-150">
+                    <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest font-sans border-b border-slate-150 pb-2 flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-indigo-505 bg-purple-500" />
+                      3. საიტის ფუტერი & მთავარი გვერდის სტატისტიკა
+                    </h3>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 mb-1">ფუტერის ტექსტი ლოგოს ქვეშ *</label>
+                      <textarea
+                        rows={2}
+                        name="footerTextUnderLogo"
+                        defaultValue={bookingSettings?.footerTextUnderLogo ?? 'განათლების, ტექნოლოგიების, კარიერული ზრდისა და კულტურული განვითარების ცენტრი ქალაქ ფოთში. შემოგვიერთდი და მიიღე მონაწილეობა ჰაბის აქტივობებში.'}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-sans focus:outline-hidden resize-none"
+                        required
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      {/* Stat 1 */}
+                      <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl space-y-2">
+                        <span className="block text-[10px] text-slate-400 font-bold uppercase">სტატისტიკა #1</span>
+                        <div>
+                          <label className="block text-[9px] font-bold text-slate-500 mb-0.5">მნიშვნელობა</label>
+                          <input
+                            type="text"
+                            name="stat1Value"
+                            defaultValue={bookingSettings?.stat1Value ?? '4+'}
+                            className="w-full p-2 bg-white border border-slate-200 rounded-lg text-xs font-bold font-sans"
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[9px] font-bold text-slate-500 mb-0.5">დასახელება</label>
+                          <input
+                            type="text"
+                            name="stat1Label"
+                            defaultValue={bookingSettings?.stat1Label ?? 'თანამედროვე სივრცე'}
+                            className="w-full p-2 bg-white border border-slate-200 rounded-lg text-xs font-sans"
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      {/* Stat 2 */}
+                      <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl space-y-2">
+                        <span className="block text-[10px] text-slate-400 font-bold uppercase">სტატისტიკა #2</span>
+                        <div>
+                          <label className="block text-[9px] font-bold text-slate-500 mb-0.5">მნიშვნელობა</label>
+                          <input
+                            type="text"
+                            name="stat2Value"
+                            defaultValue={bookingSettings?.stat2Value ?? '2k+'}
+                            className="w-full p-2 bg-white border border-slate-200 rounded-lg text-xs font-bold font-sans"
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[9px] font-bold text-slate-500 mb-0.5">დასახელება</label>
+                          <input
+                            type="text"
+                            name="stat2Label"
+                            defaultValue={bookingSettings?.stat2Label ?? 'აქტიური წევრი'}
+                            className="w-full p-2 bg-white border border-slate-200 rounded-lg text-xs font-sans"
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      {/* Stat 3 */}
+                      <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl space-y-2">
+                        <span className="block text-[10px] text-slate-400 font-bold uppercase">სტატისტიკა #3</span>
+                        <div>
+                          <label className="block text-[9px] font-bold text-slate-500 mb-0.5">მნიშვნელობა</label>
+                          <input
+                            type="text"
+                            name="stat3Value"
+                            defaultValue={bookingSettings?.stat3Value ?? '100%'}
+                            className="w-full p-2 bg-white border border-slate-200 rounded-lg text-xs font-bold font-sans"
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[9px] font-bold text-slate-500 mb-0.5">დასახელება</label>
+                          <input
+                            type="text"
+                            name="stat3Label"
+                            defaultValue={bookingSettings?.stat3Label ?? 'მხარდაჭერა'}
+                            className="w-full p-2 bg-white border border-slate-200 rounded-lg text-xs font-sans"
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      {/* Stat 4 */}
+                      <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl space-y-2">
+                        <span className="block text-[10px] text-slate-400 font-bold uppercase">სტატისტიკა #4</span>
+                        <div>
+                          <label className="block text-[9px] font-bold text-slate-500 mb-0.5">მნიშვნელობა</label>
+                          <input
+                            type="text"
+                            name="stat4Value"
+                            defaultValue={bookingSettings?.stat4Value ?? '12+'}
+                            className="w-full p-2 bg-white border border-slate-200 rounded-lg text-xs font-bold font-sans"
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[9px] font-bold text-slate-500 mb-0.5">დასახელება</label>
+                          <input
+                            type="text"
+                            name="stat4Label"
+                            defaultValue={bookingSettings?.stat4Label ?? 'მიმდინარე პროექტი'}
+                            className="w-full p-2 bg-white border border-slate-200 rounded-lg text-xs font-sans"
+                            required
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Part D: SEO & Meta Integration (Social Share Customizer with Live Preview) */}
+                  <div className="space-y-6 pt-6 border-t border-slate-150">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-150 pb-3">
+                      <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest font-sans flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                        4. SEO ოპტიმიზაცია & სოციალური ქსელის ლინკები (OG Tags)
+                      </h3>
+                      <span className="bg-emerald-50 text-emerald-700 text-[10px] font-mono px-2 py-0.5 rounded-lg border border-emerald-100 font-bold">
+                        Live Preview Engine Active
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                      {/* Left Side: SEO Controls */}
+                      <div className="lg:col-span-6 space-y-4">
+                        <div>
+                          <div className="flex justify-between items-center mb-1">
+                            <label className="block text-xs font-bold text-slate-500">საიტის SEO სათაური (Meta Title) *</label>
+                            <span className={`text-[10px] font-mono ${seoTitle.length > 60 ? 'text-rose-500 font-bold' : 'text-slate-400'}`}>
+                              {seoTitle.length} / 60 სიმბოლო
+                            </span>
+                          </div>
+                          <input
+                            type="text"
+                            name="seoTitle"
+                            value={seoTitle}
+                            onChange={(e) => setSeoTitle(e.target.value)}
+                            placeholder="მაგ: ფოთის ახალგაზრდული ჰაბი | Poti Youth Hub"
+                            className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-sans focus:outline-hidden font-medium"
+                            required
+                          />
+                        </div>
+
+                        <div>
+                          <div className="flex justify-between items-center mb-1">
+                            <label className="block text-xs font-bold text-slate-500">საიტის მოკლე აღწერა (Meta Description) *</label>
+                            <span className={`text-[10px] font-mono ${seoDescription.length > 160 ? 'text-amber-600 font-bold' : 'text-slate-400'}`}>
+                              {seoDescription.length} / 160 სიმბოლო
+                            </span>
+                          </div>
+                          <textarea
+                            rows={3}
+                            name="seoDescription"
+                            value={seoDescription}
+                            onChange={(e) => setSeoDescription(e.target.value)}
+                            placeholder="შეიყვანეთ საძიებო სისტემისთვის განკუთვნილი აღწერა..."
+                            className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-sans focus:outline-hidden resize-none leading-relaxed"
+                            required
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 mb-1">საძიებო სიტყვები (Meta Keywords) - მძიმით გამოყოფილი</label>
+                          <input
+                            type="text"
+                            name="seoKeywords"
+                            value={seoKeywords}
+                            onChange={(e) => setSeoKeywords(e.target.value)}
+                            placeholder="ფოთი, ჰაბი, ახალგაზრდობა, რობოტიქსი, ტრენინგი..."
+                            className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-sans focus:outline-hidden"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 mb-1">გასაზიარებელი სურათის ლინკი (Share/OG Image URL) *</label>
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              name="seoImage"
+                              value={seoImage}
+                              onChange={(e) => setSeoImage(e.target.value)}
+                              placeholder="https://images.unsplash.com/... ან ატვირთული ფოტოს ლინკი"
+                              className="flex-1 p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-sans focus:outline-hidden font-mono"
+                              required
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setSeoImage('https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?auto=format&fit=crop&w=1200&h=630&q=80')}
+                              className="px-3 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold rounded-xl transition-colors shrink-0 whitespace-nowrap"
+                              title="Default-ზე დაბრუნება"
+                            >
+                              სტანდარტული
+                            </button>
+                          </div>
+                          <p className="text-[10px] text-slate-400 mt-1">ეს სურათი გამოჩნდება Facebook, LinkedIn, Viber, Telegram და სხვა სოციალურ ქსელებში საიტის ბმულის გაზიარებისას. რეკომენდებული ზომა: 1200x630 პიქსელი.</p>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                          <div>
+                            <label className="block text-xs font-bold text-slate-500 mb-1">Google Analytics ID</label>
+                            <input
+                              type="text"
+                              name="seoGoogleAnalytics"
+                              value={seoGoogleAnalytics}
+                              onChange={(e) => setSeoGoogleAnalytics(e.target.value)}
+                              placeholder="G-XXXXXXXXXX"
+                              className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono focus:outline-hidden"
+                            />
+                          </div>
+                          
+                          <div className="flex items-center space-x-2.5 pt-5">
+                            <input
+                              id="seoRobotIndex"
+                              type="checkbox"
+                              checked={seoRobotIndex}
+                              onChange={(e) => setSeoRobotIndex(e.target.checked)}
+                              className="h-4 w-4 rounded text-emerald-600 border-slate-300 focus:ring-emerald-500 cursor-pointer"
+                            />
+                            <label htmlFor="seoRobotIndex" className="text-xs font-bold text-slate-700 cursor-pointer select-none">
+                              საძიებო რობოტების დაშვება (Index/Follow)
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Right Side: Live Visual Simulation Previews */}
+                      <div className="lg:col-span-6 space-y-6 bg-slate-50 p-4 sm:p-5 rounded-2xl border border-slate-200/60 font-sans">
+                        
+                        {/* Box 1: Google Results */}
+                        <div className="space-y-2">
+                          <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider flex items-center gap-1">
+                            <Search className="h-3 w-3 text-slate-400 shrink-0" />
+                            გუგლის საძიებო შედეგის სიმულაცია (Google Search Appearance)
+                          </span>
+                          
+                          <div className="bg-white p-4 rounded-xl border border-slate-150 shadow-xs space-y-1 max-w-lg">
+                            <div className="flex items-center space-x-2 text-xs text-slate-600 font-sans">
+                              <span className="w-4 h-4 rounded-full bg-slate-100 flex items-center justify-center text-[8px] font-mono border border-slate-200 text-slate-700 font-bold shrink-0">Y</span>
+                              <div className="flex flex-col">
+                                <span className="text-slate-800 text-[11px] font-sans leading-none">YHub Poti</span>
+                                <span className="text-slate-400 text-[9px] font-sans leading-none mt-0.5">https://poti.yhub.ge</span>
+                              </div>
+                            </div>
+                            
+                            <h4 className="text-[15px] text-[#1a0dab] font-sans hover:underline cursor-pointer leading-tight line-clamp-1 font-medium select-none">
+                              {seoTitle || 'ფოთის ახალგაზრდული ჰაბი | Poti Youth Hub'}
+                            </h4>
+                            
+                            <p className="text-[12px] text-[#4d5156] font-sans leading-relaxed line-clamp-2 select-none">
+                              {seoDescription || 'განათლების, ტექნოლოგიების, კარიერული ზრდისა და კულტურული განვითარების ცენტრი ქალაქ ფოთში...'}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Box 2: Social Media Link Preview Card */}
+                        <div className="space-y-2">
+                          <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider flex items-center gap-1">
+                            <Share2 className="h-3 w-3 text-slate-400 shrink-0" />
+                            სოციალური ქსელის გაზიარება (Facebook, Messenger, Viber, Direct Link)
+                          </span>
+                          
+                          <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden max-w-sm">
+                            {/* Simulated shared image */}
+                            <div className="relative aspect-video bg-slate-900 border-b border-slate-100 flex items-center justify-center overflow-hidden">
+                              {seoImage ? (
+                                <img 
+                                  src={seoImage} 
+                                  alt="OG Link Preview" 
+                                  referrerPolicy="no-referrer"
+                                  className="w-full h-full object-cover animate-fadeIn"
+                                  onError={(e) => {
+                                    (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?auto=format&fit=crop&w=1200&h=630&q=80";
+                                  }}
+                                />
+                              ) : (
+                                <div className="text-center text-slate-400 p-4">
+                                  <Eye className="h-8 w-8 mx-auto mb-1 text-slate-500 opacity-60" />
+                                  <span className="text-[10px] block font-mono">სურათი არ არის</span>
+                                </div>
+                              )}
+                              <div className="absolute top-2 left-2 bg-slate-900/80 backdrop-blur-xs text-[9px] text-white px-2 py-0.5 rounded-md font-mono font-bold uppercase tracking-wider select-none">
+                                Link Image
+                              </div>
+                            </div>
+                            
+                            {/* Simulated share meta columns */}
+                            <div className="p-3 bg-slate-50 border-t border-slate-200/50 text-left">
+                              <span className="text-[9px] text-slate-400 font-mono uppercase tracking-wider block">POTI.YHUB.GE</span>
+                              <h5 className="text-xs font-bold text-slate-800 line-clamp-1 mt-0.5 select-none leading-snug">
+                                {seoTitle || 'ფოთის ახალგაზრდული ჰაბი'}
+                              </h5>
+                              <p className="text-[10px] text-slate-500 line-clamp-2 mt-0.5 leading-normal select-none">
+                                {seoDescription || 'განათლების, ტექნოლოგიების, კარიერული ზრდისა და კულტურული განვითარების ცენტრი ქალაქ ფოთში...'}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="pt-4 border-t border-slate-150 flex justify-end">
                     <button
                       type="submit"
@@ -1407,6 +1975,308 @@ export default function AdminPanel({
         </div>
 
         {/* ---------------- DRAWERS & LAYOUTS MODALS ---------------- */}
+
+        {/* Google Spreadsheet-like Detailed Grid and Report Panel */}
+        {isSpreadsheetOpen && (
+          <div className="fixed inset-0 z-55 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-hidden">
+            <div className="bg-[#f9fbf9] rounded-2xl w-full max-w-6xl shadow-2xl flex flex-col h-[85vh] overflow-hidden border border-emerald-600/20 font-sans text-slate-800">
+              
+              {/* Google Sheets Header bar */}
+              <div className="bg-emerald-800 text-white px-5 py-4 shrink-0 flex items-center justify-between shadow-md">
+                <div className="flex items-center space-x-3.5">
+                  <div className="w-9 h-9 bg-emerald-100 text-emerald-800 rounded-xl flex items-center justify-center font-black text-lg shadow-sm">
+                    田
+                  </div>
+                  <div>
+                    <div className="flex items-center space-x-2">
+                      <span className="font-display font-medium text-sm text-emerald-50 tracking-tight">YHub Poti - Room Ordering & Bookings DB.xlsx</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-3">
+                  <span className="text-xs text-emerald-100 font-mono hidden sm:inline mr-2">ბოლო რედაქტირება: წამების წინ</span>
+                  <button
+                    onClick={() => setIsSpreadsheetOpen(false)}
+                    className="p-1.5 bg-emerald-900/40 hover:bg-emerald-950 text-emerald-100 hover:text-white rounded-lg cursor-pointer transition-colors"
+                    title="ცხრილის დახურვა"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Toolbar & Formula Bar */}
+              <div className="bg-slate-50 border-b border-slate-200 p-2.5 shrink-0 flex flex-wrap items-center justify-between gap-3 shadow-2xs">
+                {/* Spreadsheet formulas indicator and action utilities */}
+                <div className="flex items-center space-x-2 w-full md:w-auto">
+                  <div className="bg-slate-200/80 px-2.5 py-1 rounded-md text-[11px] font-mono text-slate-500 flex items-center">
+                    <span className="font-bold text-slate-700 mr-1">Cell:</span> 
+                    <span>{activeCell ? `${activeCell.field.toUpperCase().substring(0,2)}${activeCell.id.substring(0,3)}` : 'N/A'}</span>
+                  </div>
+                  <div className="text-slate-400 font-mono text-xs px-1">fx</div>
+                  <input
+                    type="text"
+                    readOnly
+                    value={activeCell 
+                      ? spreadsheetTab === 'rooms' 
+                        ? `=${activeCell.field.toUpperCase()}(Room:${activeCell.id.substring(0,4)}) = "${sheetRooms.find(r => r.id === activeCell.id)?.[activeCell.field] || ''}"`
+                        : `=${activeCell.field.toUpperCase()}(Booking:${activeCell.id.substring(0,4)}) = "${sheetBookings.find(b => b.id === activeCell.id)?.[activeCell.field] || ''}"`
+                      : spreadsheetTab === 'rooms'
+                        ? `=SUM(Room_Earnings: ₾${sheetRooms.reduce((acc, r) => acc + Number(r.earnings || 0), 0)})`
+                        : `=SUM(Approved_Bookings_Cash: ₾${sheetBookings.filter(b=>b.status==='approved').reduce((acc, b) => acc + Number(b.totalPrice || 0), 0)})`
+                    }
+                    className="flex-1 bg-white border border-slate-200 px-3 py-1 rounded-lg text-xs font-mono font-medium focus:outline-hidden text-slate-700"
+                    placeholder="ფორმულის ველი"
+                  />
+                </div>
+
+                {/* Database Operations buttons */}
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={handleExportCSV}
+                    className="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-black rounded-lg flex items-center space-x-1.5 transition-all cursor-pointer shadow-xs uppercase tracking-wider"
+                    title="მოხსენების ჩამოტვირთვა Excel-ის ფორმატში"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    <span>ექსპორტი Excel-ში (.xls)</span>
+                  </button>
+                  {spreadsheetTab === 'rooms' && (
+                    <button
+                      onClick={handleSyncSpreadsheet}
+                      className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-black rounded-lg flex items-center space-x-1.5 transition-all cursor-pointer shadow-xs uppercase tracking-wider animate-pulse-subtle"
+                      title="სინქრონიზაცია მონაცემთა ბაზასთან"
+                    >
+                      <Check className="h-3.5 w-3.5" />
+                      <span>ბაზაში შენახვა / სინქრონიზაცია</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Sheet navigation tabs at top */}
+              <div className="bg-slate-100/80 px-4 py-1.5 border-b border-slate-200 flex space-x-1.5 shrink-0 select-none">
+                <button
+                  onClick={() => setSpreadsheetTab('rooms')}
+                  className={`px-3 py-1 text-xs font-black rounded-lg transition-all cursor-pointer flex items-center space-x-1.5 ${
+                    spreadsheetTab === 'rooms'
+                      ? 'bg-white text-emerald-80 border border-slate-200 font-bold shadow-xs'
+                      : 'text-slate-500 hover:bg-slate-200'
+                  }`}
+                >
+                  <span className="text-[#107c41]">田</span>
+                  <span>ფურცელი 1: ოთახები & რიგითობა</span>
+                </button>
+                <button
+                  onClick={() => setSpreadsheetTab('bookings')}
+                  className={`px-3 py-1 text-xs font-black rounded-lg transition-all cursor-pointer flex items-center space-x-1.5 ${
+                    spreadsheetTab === 'bookings'
+                      ? 'bg-white text-emerald-80 border border-slate-200 font-bold shadow-xs'
+                      : 'text-slate-500 hover:bg-slate-200'
+                  }`}
+                >
+                  <span className="text-blue-600">田</span>
+                  <span>ფურცელი 2: ჯავშნები</span>
+                </button>
+              </div>
+
+              {/* Main Spreadsheet Grid (excel format table) */}
+              <div className="flex-1 overflow-auto bg-white">
+                <table className="w-full text-left border-collapse table-fixed select-none">
+                  {/* Alphabet column indicators (Google Spreadsheet layout) */}
+                  <thead className="bg-[#f3f3f3] text-slate-500 text-[11px] font-mono leading-none border-b border-slate-200 font-bold uppercase sticky top-0 z-10">
+                    <tr>
+                      <th className="w-12 bg-[#e6e6e6] border-r border-[#d4d4d4] text-center font-bold text-slate-600">#</th>
+                      {spreadsheetTab === 'rooms' ? (
+                        <>
+                          <th className="w-24 px-2 border-r border-[#d4d4d4] text-center bg-[#f3f3f3]">ოთახის ID</th>
+                          <th className="w-48 px-2 border-r border-[#d4d4d4] text-center bg-[#f3f3f3]">დასახელება</th>
+                          <th className="w-32 px-2 border-r border-[#d4d4d4] text-center bg-amber-50 text-amber-900 border-b-2 border-b-amber-500">რიგითობა</th>
+                          <th className="w-28 px-2 border-r border-[#d4d4d4] text-center bg-emerald-50 text-emerald-900">ტევადობა</th>
+                          <th className="w-32 px-2 border-r border-[#d4d4d4] text-center bg-blue-50 text-blue-900">ფასი საათში (₾)</th>
+                          <th className="w-32 px-2 border-r border-[#d4d4d4] text-center bg-[#f3f3f3]">დღიური ფასი (₾)</th>
+                          <th className="w-36 px-2 border-r border-[#d4d4d4] text-center bg-[#f3f3f3]">ჯავშნები</th>
+                          <th className="w-36 px-2 text-center bg-[#f3f3f3]">შემოსავალი (₾)</th>
+                        </>
+                      ) : (
+                        <>
+                          <th className="w-28 px-2 border-r border-[#d4d4d4] text-center bg-[#f3f3f3]">ჯავშნის ID</th>
+                          <th className="w-44 px-2 border-r border-[#d4d4d4] text-center bg-[#f3f3f3]">ოთახის დასახელება</th>
+                          <th className="w-28 px-2 border-r border-[#d4d4d4] text-center bg-[#f3f3f3]">თარიღი</th>
+                          <th className="w-36 px-2 border-r border-[#d4d4d4] text-center bg-[#f3f3f3]">საათები</th>
+                          <th className="w-44 px-2 border-r border-[#d4d4d4] text-center bg-[#f3f3f3]">სახელი და გვარი</th>
+                          <th className="w-48 px-2 border-r border-[#d4d4d4] text-center bg-[#f3f3f3]">ორგანიზაცია</th>
+                          <th className="w-44 px-2 border-r border-[#d4d4d4] text-center bg-[#f3f3f3]">საკონტაქტო</th>
+                          <th className="w-32 px-2 border-r border-[#d4d4d4] text-center bg-[#f3f3f3]">თანხა (₾)</th>
+                        </>
+                      )}
+                    </tr>
+                  </thead>
+                  
+                  <tbody className="divide-y divide-[#e1e1e1] text-xs font-sans">
+                    {spreadsheetTab === 'rooms' ? (
+                      sheetRooms.map((sr, idx) => (
+                        <tr key={sr.id} className="hover:bg-slate-50/50 align-middle h-9">
+                          {/* Row Indicator */}
+                          <td className="bg-[#f3f3f3] border-r border-[#d4d4d4] text-center text-[10px] font-mono font-black text-slate-500">
+                            {idx + 2}
+                          </td>
+                          {/* Room ID (Read Only) */}
+                          <td className="px-3 border-r border-[#e1e1e1] font-mono text-[10px] font-semibold text-[#107c41]">
+                            {sr.id.substring(0, 8)}...
+                          </td>
+                          {/* Room Name (Read Only) */}
+                          <td className="px-3 border-r border-[#e1e1e1] font-bold text-slate-900 truncate">
+                            {sr.name}
+                          </td>
+                          {/* Editable Order (Priority) */}
+                          <td className={`p-0 border-r border-[#e1e1e1] text-center bg-amber-50/30 ${activeCell?.id === sr.id && activeCell?.field === 'order' ? 'ring-2 ring-amber-500 z-10' : ''}`}>
+                            <input
+                              type="number"
+                              value={sr.order}
+                              onChange={(e) => handleUpdateSheetRoom(sr.id, 'order', e.target.value)}
+                              onFocus={() => setActiveCell({ id: sr.id, field: 'order' })}
+                              className="w-full h-full border-0 focus:outline-hidden px-3 text-center text-xs font-black font-mono text-amber-800 bg-transparent transition-colors"
+                            />
+                          </td>
+                          {/* Editable Capacity */}
+                          <td className={`p-0 border-r border-[#e1e1e1] text-center bg-emerald-50/20 ${activeCell?.id === sr.id && activeCell?.field === 'capacity' ? 'ring-2 ring-emerald-500 z-10' : ''}`}>
+                            <input
+                              type="number"
+                              value={sr.capacity}
+                              onChange={(e) => handleUpdateSheetRoom(sr.id, 'capacity', e.target.value)}
+                              onFocus={() => setActiveCell({ id: sr.id, field: 'capacity' })}
+                              className="w-full h-full border-0 focus:outline-hidden px-3 text-center text-xs font-bold font-mono text-emerald-800 bg-transparent"
+                            />
+                          </td>
+                          {/* Editable Hourly Price */}
+                          <td className={`p-0 border-r border-[#e1e1e1] text-right bg-blue-50/20 ${activeCell?.id === sr.id && activeCell?.field === 'price' ? 'ring-2 ring-blue-500 z-10' : ''}`}>
+                            <div className="flex items-center justify-end px-2.5 h-full">
+                              <span className="text-slate-400 font-mono scale-90 mr-0.5">₾</span>
+                              <input
+                                type="number"
+                                value={sr.price}
+                                onChange={(e) => handleUpdateSheetRoom(sr.id, 'price', e.target.value)}
+                                onFocus={() => setActiveCell({ id: sr.id, field: 'price' })}
+                                className="w-14 border-0 focus:outline-hidden text-right text-xs font-bold font-mono text-slate-800 bg-transparent"
+                              />
+                            </div>
+                          </td>
+                          {/* Editable Day Price */}
+                          <td className={`p-0 border-r border-[#e1e1e1] text-right ${activeCell?.id === sr.id && activeCell?.field === 'dayPrice' ? 'ring-2 ring-emerald-500 z-10' : ''}`}>
+                            <div className="flex items-center justify-end px-2.5 h-full">
+                              <span className="text-slate-400 font-mono scale-90 mr-0.5">₾</span>
+                              <input
+                                type="number"
+                                value={sr.dayPrice}
+                                onChange={(e) => handleUpdateSheetRoom(sr.id, 'dayPrice', e.target.value)}
+                                onFocus={() => setActiveCell({ id: sr.id, field: 'dayPrice' })}
+                                className="w-16 border-0 focus:outline-hidden text-right text-xs font-medium font-mono text-slate-700 bg-transparent"
+                              />
+                            </div>
+                          </td>
+                          {/* Bookings Count (Read Only) */}
+                          <td className="px-3 border-r border-[#e1e1e1] text-center font-mono font-bold text-slate-500">
+                            {sr.bookingsCount} ჯავშანი
+                          </td>
+                          {/* Earnings (Read Only formula calculation) */}
+                          <td className="px-3 text-right font-mono font-black text-slate-900 bg-slate-50/40">
+                            ₾{sr.earnings}.00
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      sheetBookings.map((b, idx) => (
+                        <tr key={b.id} className="hover:bg-slate-50/50 align-middle h-9">
+                          <td className="bg-[#f3f3f3] border-r border-[#d4d4d4] text-center text-[10px] font-mono font-black text-slate-500">
+                            {idx + 2}
+                          </td>
+                          <td className="px-3 border-r border-[#e1e1e1] font-mono text-[10px] font-bold text-slate-600">
+                            RSV-{b.id.substring(0, 6)}
+                          </td>
+                          <td className="px-3 border-r border-[#e1e1e1] font-bold text-slate-800 truncate">
+                            {b.roomName}
+                          </td>
+                          <td className="px-3 border-r border-[#e1e1e1] font-mono text-[10.5px] text-slate-600 truncate">
+                            {b.date}
+                          </td>
+                          <td className="px-3 border-r border-[#e1e1e1] font-sans text-[11px] text-slate-500 truncate">
+                            {b.durationHours}
+                          </td>
+                          <td className="px-3 border-r border-[#e1e1e1] font-medium text-slate-900 truncate">
+                            {b.firstName} {b.lastName}
+                          </td>
+                          <td className="px-3 border-r border-[#e1e1e1] font-medium text-[#107c41] truncate" title={b.organization}>
+                            {b.organization || '-'}
+                          </td>
+                          <td className="px-3 border-r border-[#e1e1e1] font-mono text-[10px] text-slate-500 truncate">
+                            {b.phone}
+                          </td>
+                          <td className={`px-3 text-right font-mono font-black ${b.status === 'approved' ? 'text-emerald-700 bg-emerald-50/10' : 'text-slate-400'}`}>
+                            ₾{b.totalPrice}.00
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                  {/* Spreadsheet formulas and summaries row */}
+                  <tfoot className="bg-[#f3f3f3] border-t-2 border-[#d4d4d4] font-mono text-xs font-black shadow-inner sticky bottom-0 z-10 leading-none h-10">
+                    {spreadsheetTab === 'rooms' ? (
+                      <tr>
+                        <td className="bg-[#e6e6e6] border-r border-[#d4d4d4]"></td>
+                        <td className="px-3 border-r border-[#e1e1e1] text-[#107c41]">AVERAGE</td>
+                        <td className="px-3 border-r border-[#e1e1e1]">საშუალო მაჩვენებლები ➔</td>
+                        <td className="px-3 border-r border-[#e1e1e1]"></td>
+                        <td className="px-3 border-r border-[#e1e1e1] text-center font-bold text-[#107c41]">
+                          {Math.round(sheetRooms.reduce((acc, r) => acc + Number(r.capacity || 0), 0) / Math.max(1, sheetRooms.length))} / ოთახზე
+                        </td>
+                        <td className="px-3 border-r border-[#e1e1e1] text-right text-blue-800">
+                          ₾{Math.round(sheetRooms.reduce((acc, r) => acc + Number(r.price || 0), 0) / Math.max(1, sheetRooms.length))}
+                        </td>
+                        <td className="px-3 border-r border-[#e1e1e1]"></td>
+                        <td className="px-3 border-r border-[#e1e1e1] text-center text-slate-600">ჯამური ბრუნვა (SUM) ➜</td>
+                        <td className="px-3 text-right text-[#107c41] bg-emerald-50/30 text-xs font-black ring-1 ring-emerald-300">
+                          ₾{sheetRooms.reduce((acc, r) => acc + Number(r.earnings || 0), 0)}.00
+                        </td>
+                      </tr>
+                    ) : (
+                      <tr>
+                        <td className="bg-[#e6e6e6] border-r border-[#d4d4d4]"></td>
+                        <td className="px-3 border-r border-[#e1e1e1] text-slate-500">SUM = {sheetBookings.length} ჯავშანი</td>
+                        <td className="px-3 border-r border-[#e1e1e1]"></td>
+                        <td className="px-3 border-r border-[#e1e1e1]"></td>
+                        <td className="px-3 border-r border-[#e1e1e1]"></td>
+                        <td className="px-3 border-r border-[#e1e1e1]"></td>
+                        <td className="px-3 border-r border-[#e1e1e1]"></td>
+                        <td className="px-3 border-r border-[#e1e1e1] text-right text-slate-600 pr-4 font-sans">დამტკიცებული ჯამი:</td>
+                        <td className="px-3 text-right text-emerald-700 bg-emerald-50/30 font-black ring-1 ring-emerald-300">
+                          ₾{sheetBookings.filter(b=>b.status==='approved').reduce((acc, b) => acc + Number(b.totalPrice || 0), 0)}.00
+                        </td>
+                      </tr>
+                    )}
+                  </tfoot>
+                </table>
+              </div>
+
+              {/* Status footer bar */}
+              <div className="bg-[#f3f3f3] border-t border-slate-200 px-5 py-2.5 shrink-0 flex items-center justify-between text-[11px] text-slate-550 select-none">
+                <div className="flex items-center space-x-4">
+                  <span className="flex items-center space-x-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span className="font-bold text-[#107c41]">მზადაა მუშაობისთვის</span>
+                  </span>
+                  <span>თავსებადობა: Excel, Google Sheets, CSV formatters</span>
+                </div>
+                <div className="flex items-center space-x-2.5 font-mono">
+                  <span>ხაზები: {spreadsheetTab === 'rooms' ? sheetRooms.length + 1 : sheetBookings.length + 1}</span>
+                  <span>სვეტები: 9</span>
+                  <span>SUM(Earnings) = ₾{spreadsheetTab === 'rooms' ? sheetRooms.reduce((acc, r) => acc + Number(r.earnings || 0), 0) : sheetBookings.reduce((acc, b) => acc + Number(b.totalPrice || 0), 0)}</span>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        )}
 
         {/* Dynamic PDF-Invoice Simulation overlay rendering modal */}
         {selectedInvoiceBooking && (

@@ -42,10 +42,10 @@ export default function Navbar({
           {/* Logo and Brand Name */}
           <div className="flex items-center">
             <a
-              href="/news"
+              href="/"
               onClick={(e) => {
                 e.preventDefault();
-                handleNavClick('news');
+                handleNavClick('home');
               }}
               className="flex items-center space-x-3 cursor-pointer group no-underline"
               id="nav-logo"
@@ -73,7 +73,7 @@ export default function Navbar({
                 <a
                   key={link.id}
                   id={`nav-link-${link.id}`}
-                  href={`/${link.id}`}
+                  href={link.id === 'news' ? '/' : `/${link.id}`}
                   onClick={(e) => {
                     e.preventDefault();
                     handleNavClick(link.id);
@@ -91,30 +91,19 @@ export default function Navbar({
             })}
 
             {/* Portal Tab Switch (Admin Panel Toggle) */}
-            <div className="ml-4 pl-4 border-l border-slate-200">
-              {currentTab === 'admin' ? (
+            {currentTab === 'admin' && (
+              <div className="ml-4 pl-4 border-l border-slate-200">
                 <button
                   id="tab-back-to-site"
                   onClick={() => {
-                    setActiveSection('news');
+                    setActiveSection('home');
                   }}
                   className="flex items-center space-x-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 transition-all duration-200 hover:shadow-xs cursor-pointer"
                 >
                   <span>საიტზე დაბრუნება</span>
                 </button>
-              ) : (
-                <button
-                  id="tab-admin"
-                  onClick={() => {
-                    setCurrentTab('admin');
-                  }}
-                  className="flex items-center space-x-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-slate-900 hover:bg-slate-800 transition-all duration-200 hover:shadow-md cursor-pointer"
-                >
-                  <ShieldCheck className="h-4.5 w-4.5 text-emerald-400" />
-                  <span>ადმინ პანელი</span>
-                </button>
-              )}
-            </div>
+              </div>
+            )}
           </div>
 
           {/* Mobile Menu Button */}
@@ -140,7 +129,7 @@ export default function Navbar({
               <a
                 key={link.id}
                 id={`mobile-nav-link-${link.id}`}
-                href={`/${link.id}`}
+                href={link.id === 'news' ? '/' : `/${link.id}`}
                 onClick={(e) => {
                   e.preventDefault();
                   handleNavClick(link.id);
@@ -157,32 +146,20 @@ export default function Navbar({
             );
           })}
           
-          <div className="pt-4 border-t border-slate-150">
-            {currentTab === 'admin' ? (
+          {currentTab === 'admin' && (
+            <div className="pt-4 border-t border-slate-150">
               <button
                 id="mobile-tab-back"
                 onClick={() => {
-                  setActiveSection('news');
+                  setActiveSection('home');
                   setIsOpen(false);
                 }}
                 className="flex items-center justify-center space-x-2 w-full px-4 py-3 rounded-xl text-base font-bold text-slate-700 bg-slate-100 text-center"
               >
                 <span>საიტზე დაბრუნება</span>
               </button>
-            ) : (
-              <button
-                id="mobile-tab-admin"
-                onClick={() => {
-                  setCurrentTab('admin');
-                  setIsOpen(false);
-                }}
-                className="flex items-center justify-center space-x-2 w-full px-4 py-3 rounded-xl text-base font-bold text-white bg-slate-900 hover:bg-slate-800 text-center shadow-xs"
-              >
-                <ShieldCheck className="h-5 w-5 text-emerald-400" />
-                <span>ადმინ პანელი</span>
-              </button>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       )}
     </nav>

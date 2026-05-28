@@ -17,6 +17,7 @@ export interface HubItem {
   location?: string; // for trainings/contests
   salaryRange?: string; // for vacancies
   requirements?: string[]; // for vacancies/contests/trainings Max capacity, etc.
+  order?: number; // custom ordering
 }
 
 export interface MediaItem {
@@ -39,6 +40,7 @@ export interface Room {
   features: string[];
   panoramaUrl?: string; // 360 room photo URL (Pannellum embed or direct link)
   videoUrl?: string; // YouTube video link or embed URL
+  order?: number; // custom ordering
 }
 
 export interface CustomQuestion {

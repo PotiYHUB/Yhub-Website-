@@ -4,6 +4,7 @@
  */
 
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { HubItem, HubCategory } from '../types';
 import { Calendar, MapPin, Award, Search, ArrowRight, Briefcase, Trophy, GraduationCap, Clock, HelpCircle, X } from 'lucide-react';
 
@@ -13,6 +14,7 @@ interface HubContentProps {
 }
 
 export default function HubContent({ hubItems, onNavigateToBooking }: HubContentProps) {
+  const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<HubCategory | 'all'>('all');
   const [selectedItem, setSelectedItem] = useState<HubItem | null>(null);
@@ -165,7 +167,7 @@ export default function HubContent({ hubItems, onNavigateToBooking }: HubContent
                   className="bg-white rounded-2xl overflow-hidden border border-slate-100 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col group"
                 >
                   {/* Card Cover */}
-                  <div className="relative h-52 overflow-hidden bg-slate-150">
+                  <div className="relative h-52 overflow-hidden bg-slate-150 cursor-pointer" onClick={() => navigate('/news/' + item.id)}>
                     <img
                       src={item.coverImage}
                       alt={item.title}
@@ -188,7 +190,10 @@ export default function HubContent({ hubItems, onNavigateToBooking }: HubContent
                         <Calendar className="h-3.5 w-3.5" />
                         <span>{item.date}</span>
                       </div>
-                      <h3 className="font-display font-extrabold text-lg text-slate-900 group-hover:text-brand-600 transition-colors line-clamp-2 leading-snug">
+                      <h3 
+                        className="font-display font-extrabold text-lg text-slate-900 group-hover:text-brand-600 transition-colors line-clamp-2 leading-snug cursor-pointer"
+                        onClick={() => navigate('/news/' + item.id)}
+                      >
                         {item.title}
                       </h3>
                       <p className="mt-3 text-slate-500 text-sm line-clamp-3 font-sans leading-relaxed">
@@ -211,7 +216,7 @@ export default function HubContent({ hubItems, onNavigateToBooking }: HubContent
                       )}
                       
                       <button
-                        onClick={() => setSelectedItem(item)}
+                        onClick={() => navigate('/news/' + item.id)}
                         className="flex items-center space-x-1 text-xs font-bold text-slate-800 hover:text-brand-650 group/btn transition-colors cursor-pointer"
                       >
                         <span>სრულად</span>

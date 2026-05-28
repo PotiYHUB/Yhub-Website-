@@ -14,6 +14,7 @@ interface GallerySectionProps {
 export default function GallerySection({ mediaItems }: GallerySectionProps) {
   const [activeFilter, setActiveFilter] = useState<'all' | 'photo' | 'video'>('all');
   const [lightboxItem, setLightboxItem] = useState<MediaItem | null>(null);
+  const [playerTipActive, setPlayerTipActive] = useState(false);
 
   const filteredMedia = mediaItems.filter((item) => {
     if (activeFilter === 'all') return true;
@@ -121,7 +122,10 @@ export default function GallerySection({ mediaItems }: GallerySectionProps) {
         {lightboxItem && (
           <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex flex-col justify-center items-center p-4">
             <button
-              onClick={() => setLightboxItem(null)}
+              onClick={() => {
+                setLightboxItem(null);
+                setPlayerTipActive(false);
+              }}
               className="absolute top-6 right-6 bg-white/10 hover:bg-white/20 text-white p-3 rounded-full cursor-pointer transition-colors"
             >
               <X className="h-6 w-6" />
@@ -131,6 +135,11 @@ export default function GallerySection({ mediaItems }: GallerySectionProps) {
               {lightboxItem.type === 'video' ? (
                 // Beautifully simulated high-fidelity mock video layout with playback controls simulation
                 <div className="relative w-full aspect-video max-w-3xl bg-slate-950 rounded-2xl overflow-hidden border border-white/10 shadow-2xl flex flex-col justify-center items-center p-6 text-center">
+                  {playerTipActive && (
+                    <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-slate-900 border border-white/10 px-4 py-2 rounded-xl text-[11px] text-amber-300 font-sans shadow-xl animate-bounce">
+                      ვიდეო მასალები მალე ხელმისაწვდომი იქნება YouTube-ზე!
+                    </div>
+                  )}
                   <div className="absolute top-4 left-4 bg-red-600 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest flex items-center space-x-1.5">
                     <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping"></span>
                     <span>HD ვიდეო</span>
@@ -144,14 +153,20 @@ export default function GallerySection({ mediaItems }: GallerySectionProps) {
                   </p>
                   <div className="flex space-x-3">
                     <button
-                      onClick={() => alert('ვიდეო პლეერი მზადებაშია! აპლიკაცია მუშაობს იმიტაციურ გარემოში.')}
+                      onClick={() => {
+                        setPlayerTipActive(true);
+                        setTimeout(() => setPlayerTipActive(false), 3500);
+                      }}
                       className="px-6 py-2.5 bg-brand-500 hover:bg-brand-600 text-slate-900 rounded-xl text-sm font-black transition-colors flex items-center space-x-2 cursor-pointer"
                     >
                       <Play className="h-4 w-4 fill-slate-900" />
                       <span>ვიდეოს ჩართვა (YouTube)</span>
                     </button>
                     <button
-                      onClick={() => setLightboxItem(null)}
+                      onClick={() => {
+                        setLightboxItem(null);
+                        setPlayerTipActive(false);
+                      }}
                       className="px-5 py-2.5 bg-white/10 hover:bg-white/15 text-white rounded-xl text-sm font-bold border border-white/5 transition-colors cursor-pointer"
                     >
                       დახურვა

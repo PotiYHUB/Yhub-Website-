@@ -3,12 +3,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Navbar from './components/Navbar';
 import HubContent from './components/HubContent';
 import GallerySection from './components/GallerySection';
 import RoomBooking from './components/RoomBooking';
 import AdminPanel from './components/AdminPanel';
+import HubItemPage from './components/HubItemPage';
 import { Room, Booking, CustomQuestion, HubItem, MediaItem } from './types';
 // @ts-ignore
 import heroBg from './assets/images/hero_bg_1779452320998.png';
@@ -24,7 +25,7 @@ import {
 } from './mockData';
 
 import { 
-  Compass, Users, Calendar, Award, MapPin, Mail, Phone, Anchor, ArrowDown, HelpCircle, ShieldCheck
+  Compass, Users, Calendar, Award, MapPin, Mail, Phone, Anchor, ArrowDown, HelpCircle, ShieldCheck, ShieldAlert, X, ArrowUp
 } from 'lucide-react';
 
 // Live Firestore integration imports
@@ -45,6 +46,8 @@ export default function App() {
   const location = useLocation();
   const navigate = useNavigate();
 
+  const shouldScrollToNews = useRef(false);
+
   // Derived state directly from URL pathname
   const currentTab = location.pathname.startsWith('/admin') ? 'admin' : 'user';
   
@@ -58,7 +61,37 @@ export default function App() {
   }
 
   const handleNavigate = (sec: string) => {
-    navigate(`/${sec}`);
+    if (sec === 'home') {
+      if (location.pathname === '/') {
+        window.scrollTo({
+          top: 0,
+          behavior: 'smooth'
+        });
+      } else {
+        navigate('/');
+      }
+      return;
+    }
+
+    if (sec === 'news') {
+      if (location.pathname === '/') {
+        const el = document.getElementById('news');
+        if (el) {
+          const headerOffset = 90;
+          const elementPosition = el.getBoundingClientRect().top;
+          const offsetPosition = elementPosition + window.pageYOffset - headerOffset;
+          window.scrollTo({
+            top: offsetPosition,
+            behavior: 'smooth'
+          });
+        }
+      } else {
+        shouldScrollToNews.current = true;
+        navigate('/');
+      }
+    } else {
+      navigate(`/${sec}`);
+    }
   };
 
   // Authenticated state
@@ -82,7 +115,22 @@ export default function App() {
     invoiceOrgName: 'ფოთის ახალგაზრდული ჰაბი',
     invoiceBankName: 'საქართველოს ბანკი',
     invoiceIban: 'GE90BG0000000123456789',
-    invoiceFooter: 'გმადლობთ, რომ სარგებლობთ ახალგაზრდული ჰაბის სივრცით!'
+    invoiceFooter: 'გმადლობთ, რომ სარგებლობთ ახალგაზრდული ჰაბის სივრცით!',
+    footerTextUnderLogo: 'განათლების, ტექნოლოგიების, კარიერული ზრდისა და კულტურული განვითარების ცენტრი ქალაქ ფოთში. შემოგვიერთდი და მიიღე მონაწილეობა ჰაბის აქტივობებში.',
+    stat1Value: '4+',
+    stat1Label: 'თანამედროვე სივრცე',
+    stat2Value: '2k+',
+    stat2Label: 'აქტიური წევრი',
+    stat3Value: '100%',
+    stat3Label: 'მხარდაჭერა',
+    stat4Value: '12+',
+    stat4Label: 'მიმდინარე პროექტი',
+    seoTitle: 'ფოთის ახალგაზრდული ჰაბი | Poti Youth Hub',
+    seoDescription: 'განათლების, ტექნოლოგიების, კარიერული ზრდისა და კულტურული განვითარების ცენტრი ქალაქ ფოთში. შემოგვიერთდი და მიიღე მონაწილეობა ჰაბის აქტივობებში.',
+    seoKeywords: 'ფოთი, ახალგაზრდობა, ჰაბი, ტრენინგი, კარიერა, სივრცე',
+    seoImage: 'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?auto=format&fit=crop&w=1200&h=630&q=80',
+    seoGoogleAnalytics: 'G-XXXXXXXXXX',
+    seoRobotIndex: true
   });
 
   // Tracking individual visitors' guest bookings submissions globally
@@ -91,21 +139,73 @@ export default function App() {
   // Emails tracking state
   const [emails, setEmails] = useState<any[]>([]);
 
+  // Custom confirmation modal state
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
+
+  const triggerConfirm = (title: string, message: string, onConfirm: () => void) => {
+    setConfirmModal({
+      isOpen: true,
+      title,
+      message,
+      onConfirm: () => {
+        onConfirm();
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+      }
+    });
+  };
+
+  // Custom banner notification state
+  const [notification, setNotification] = useState<{
+    message: string;
+    type: 'success' | 'error' | 'info';
+    id: string;
+  } | null>(null);
+
+  const showNotification = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    setNotification({ message, type, id: Math.random().toString() });
+  };
+
+  useEffect(() => {
+    if (notification) {
+      const timer = setTimeout(() => {
+        setNotification(null);
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [notification]);
+
   // Detect genuine Admin permissions
   const isSystemAdmin = user?.email === 'yhub.poti@gmail.com';
 
-  // Automatically scroll to the exact start of the news grid component if /news is chosen, otherwise top
+  // Scroll to top on route changes
   useEffect(() => {
-    if (location.pathname === '/news') {
+    if (shouldScrollToNews.current) {
+      shouldScrollToNews.current = false;
       const timer = setTimeout(() => {
         const el = document.getElementById('news');
         if (el) {
-          el.scrollIntoView({ behavior: 'smooth' });
+          const headerOffset = 90;
+          const elementPosition = el.getBoundingClientRect().top;
+          const offsetPosition = elementPosition + window.pageYOffset - headerOffset;
+          window.scrollTo({
+            top: offsetPosition,
+            behavior: 'smooth'
+          });
         }
       }, 150);
       return () => clearTimeout(timer);
     } else {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      window.scrollTo({ top: 0, behavior: 'instant' });
     }
   }, [location.pathname]);
 
@@ -142,6 +242,11 @@ export default function App() {
             });
           }
         } else {
+          roomsList.sort((a, b) => {
+            const orderA = a.order !== undefined ? a.order : (Number(a.id) || 999);
+            const orderB = b.order !== undefined ? b.order : (Number(b.id) || 999);
+            return orderA - orderB;
+          });
           setRooms(roomsList);
         }
       },
@@ -202,7 +307,14 @@ export default function App() {
             });
           }
         } else {
-          list.sort((a, b) => b.date.localeCompare(a.date));
+          list.sort((a, b) => {
+            const orderA = a.order !== undefined ? a.order : 0;
+            const orderB = b.order !== undefined ? b.order : 0;
+            if (orderA !== orderB) {
+              return orderA - orderB;
+            }
+            return b.date.localeCompare(a.date);
+          });
           setHubItems(list);
         }
       },
@@ -252,6 +364,63 @@ export default function App() {
       unsubscribeSettings();
     };
   }, [user]);
+
+  // Dynamic Browser Tab / SEO Meta Tag Injection
+  useEffect(() => {
+    // 1. Update document title
+    if (bookingSettings.seoTitle) {
+      document.title = bookingSettings.seoTitle;
+    }
+
+    // 2. Update/create Helper for meta tag updates
+    const updateOrCreateMeta = (nameAttr: string, value: string, isProperty: boolean = false) => {
+      const attrName = isProperty ? 'property' : 'name';
+      let meta = document.querySelector(`meta[${attrName}="${nameAttr}"]`);
+      if (!meta) {
+        meta = document.createElement('meta');
+        meta.setAttribute(attrName, nameAttr);
+        document.head.appendChild(meta);
+      }
+      meta.setAttribute('content', value);
+    };
+
+    if (bookingSettings.seoDescription) {
+      updateOrCreateMeta('description', bookingSettings.seoDescription);
+      updateOrCreateMeta('og:description', bookingSettings.seoDescription, true);
+    }
+    if (bookingSettings.seoKeywords) {
+      updateOrCreateMeta('keywords', bookingSettings.seoKeywords);
+    }
+    if (bookingSettings.seoTitle) {
+      updateOrCreateMeta('og:title', bookingSettings.seoTitle, true);
+    }
+    if (bookingSettings.seoImage) {
+      updateOrCreateMeta('og:image', bookingSettings.seoImage, true);
+    }
+    updateOrCreateMeta('robots', bookingSettings.seoRobotIndex ? 'index, follow' : 'noindex, nofollow');
+
+    // 3. Dynamic Google Analytics Injection
+    if (bookingSettings.seoGoogleAnalytics && bookingSettings.seoGoogleAnalytics !== 'G-XXXXXXXXXX') {
+      const gId = bookingSettings.seoGoogleAnalytics;
+      // Check if tag already exists
+      const existingScript = document.querySelector(`script[src*="googletagmanager.com/gtag/js?id=${gId}"]`);
+      if (!existingScript) {
+        const scEl = document.createElement('script');
+        scEl.async = true;
+        scEl.src = `https://www.googletagmanager.com/gtag/js?id=${gId}`;
+        document.head.appendChild(scEl);
+
+        const configSc = document.createElement('script');
+        configSc.innerHTML = `
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+          gtag('config', '${gId}');
+        `;
+        document.head.appendChild(configSc);
+      }
+    }
+  }, [bookingSettings.seoTitle, bookingSettings.seoDescription, bookingSettings.seoKeywords, bookingSettings.seoImage, bookingSettings.seoRobotIndex, bookingSettings.seoGoogleAnalytics]);
 
   // 3. Admin bookings list subscription
   useEffect(() => {
@@ -376,13 +545,79 @@ export default function App() {
     }
   };
 
-  const handleDeleteRoom = async (id: string) => {
-    if (confirm('ნამდვილად გსურთ ამ ოთახის წაშლა?')) {
-      try {
-        await deleteDoc(doc(db, 'rooms', id));
-      } catch (err) {
-        handleFirestoreError(err, OperationType.DELETE, `rooms/${id}`);
+  const handleDeleteRoom = (id: string) => {
+    triggerConfirm(
+      'ოთახის წაშლა',
+      'ნამდვილად გსურთ ამ ოთახის წაშლა?',
+      async () => {
+        try {
+          await deleteDoc(doc(db, 'rooms', id));
+          showNotification('ოთახი წარმატებით წაიშალა', 'success');
+        } catch (err) {
+          handleFirestoreError(err, OperationType.DELETE, `rooms/${id}`);
+          showNotification('ოთახის წაშლა ვერ მოხერხდა', 'error');
+        }
       }
+    );
+  };
+
+  const handleDeleteBooking = (id: string) => {
+    triggerConfirm(
+      'ჯავშნის წაშლა',
+      'ნამდვილად გსურთ ამ ჯავშნის სამუდამოდ წაშლა? (ეს ქმედება შეუქცევადია)',
+      async () => {
+        try {
+          await deleteDoc(doc(db, 'bookings', id));
+          showNotification('ჯავშანი წარმატებით წაიშალა', 'success');
+        } catch (err) {
+          handleFirestoreError(err, OperationType.DELETE, `bookings/${id}`);
+          showNotification('ჯავშნის წაშლა ვერ მოხერხდა', 'error');
+        }
+      }
+    );
+  };
+
+  const handleReorderRoom = async (roomId: string, direction: 'up' | 'down') => {
+    const currentRooms = [...rooms].sort((a, b) => {
+      const orderA = a.order !== undefined ? a.order : (Number(a.id) || 999);
+      const orderB = b.order !== undefined ? b.order : (Number(b.id) || 999);
+      return orderA - orderB;
+    });
+
+    const index = currentRooms.findIndex(r => r.id === roomId);
+    if (index === -1) return;
+
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= currentRooms.length) return;
+
+    const itemA = { ...currentRooms[index] };
+    const itemB = { ...currentRooms[targetIndex] };
+
+    // Set orders
+    const indexOrder = itemA.order !== undefined ? itemA.order : index;
+    const targetOrder = itemB.order !== undefined ? itemB.order : targetIndex;
+
+    itemA.order = targetOrder;
+    itemB.order = indexOrder;
+
+    // ensure no identical orders can conflict
+    if (itemA.order === itemB.order) {
+      if (direction === 'up') {
+        itemA.order = index - 1;
+        itemB.order = index;
+      } else {
+        itemA.order = index + 1;
+        itemB.order = index;
+      }
+    }
+
+    try {
+      await setDoc(doc(db, 'rooms', itemA.id), sanitizeForFirestore(itemA));
+      await setDoc(doc(db, 'rooms', itemB.id), sanitizeForFirestore(itemB));
+      showNotification('ოთახების თანამიმდევრობა განახლდა', 'success');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `rooms/${itemA.id}`);
+      showNotification('თანამიმდევრობის შენახვა ვერ მოხერხდა', 'error');
     }
   };
 
@@ -396,6 +631,7 @@ export default function App() {
         invoiceNumber: invoiceNum
       };
       await setDoc(doc(db, 'bookings', id), sanitizeForFirestore(updated));
+      showNotification('ჯავშანი წარმატებით დადასტურდა და ინვოისი გაიგზავნა', 'success');
 
       // Save approval with invoice email in Firestore
       const approveEmail = {
@@ -410,6 +646,7 @@ export default function App() {
       await setDoc(doc(db, 'emails', emailId), sanitizeForFirestore(approveEmail));
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, `bookings/${id}`);
+      showNotification('შეცდომა ჯავშნის დადასტურებისას', 'error');
     }
   };
 
@@ -423,6 +660,7 @@ export default function App() {
         adminNotes: reason
       };
       await setDoc(doc(db, 'bookings', id), sanitizeForFirestore(updated));
+      showNotification('ჯავშანი უარყოფილია', 'info');
 
       // Save rejection email in Firestore
       const rejectEmail = {
@@ -436,50 +674,117 @@ export default function App() {
       await setDoc(doc(db, 'emails', emailId), sanitizeForFirestore(rejectEmail));
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, `bookings/${id}`);
+      showNotification('შეცდომა ჯავშნის უარყოფისას', 'error');
     }
   };
 
   const handleAddQuestion = async (q: CustomQuestion) => {
     try {
       await setDoc(doc(db, 'customQuestions', q.id), sanitizeForFirestore(q));
+      showNotification('კითხვა წარმატებით დაემატა', 'success');
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, `customQuestions/${q.id}`);
+      showNotification('კითხვის დამატება ვერ მოხერხდა', 'error');
     }
   };
 
-  const handleDeleteQuestion = async (id: string) => {
-    if (confirm('დარწმუნებული ხართ, რომ გსურთ კითხვის წაშლა?')) {
-      try {
-        await deleteDoc(doc(db, 'customQuestions', id));
-      } catch (err) {
-        handleFirestoreError(err, OperationType.DELETE, `customQuestions/${id}`);
+  const handleDeleteQuestion = (id: string) => {
+    triggerConfirm(
+      'კითხვის წაშლა',
+      'დარწმუნებული ხართ, რომ გსურთ კითხვის წაშლა?',
+      async () => {
+        try {
+          await deleteDoc(doc(db, 'customQuestions', id));
+          showNotification('კითხვა წარმატებით წაიშალა', 'success');
+        } catch (err) {
+          handleFirestoreError(err, OperationType.DELETE, `customQuestions/${id}`);
+          showNotification('კითხვის წაშლა ვერ მოხერხდა', 'error');
+        }
       }
-    }
+    );
   };
 
   const handleAddHubItem = async (item: HubItem) => {
     try {
       await setDoc(doc(db, 'hubItems', item.id), sanitizeForFirestore(item));
+      showNotification('პოსტი წარმატებით დაემატა', 'success');
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, `hubItems/${item.id}`);
+      showNotification('პოსტის დამატება ვერ მოხერხდა', 'error');
     }
   };
 
-  const handleDeleteHubItem = async (id: string) => {
-    if (confirm('ნამდვილად გსურთ პოსტის წაშლა?')) {
-      try {
-        await deleteDoc(doc(db, 'hubItems', id));
-      } catch (err) {
-        handleFirestoreError(err, OperationType.DELETE, `hubItems/${id}`);
+  const handleDeleteHubItem = (id: string) => {
+    triggerConfirm(
+      'პოსტის წაშლა',
+      'ნამდვილად გსურთ პოსტის წაშლა?',
+      async () => {
+        try {
+          await deleteDoc(doc(db, 'hubItems', id));
+          showNotification('პოსტი წარმატებით წაიშალა', 'success');
+        } catch (err) {
+          handleFirestoreError(err, OperationType.DELETE, `hubItems/${id}`);
+          showNotification('პოსტის წაშლა ვერ მოხერხდა', 'error');
+        }
+      }
+    );
+  };
+
+  const handleReorderHubItem = async (itemId: string, direction: 'up' | 'down') => {
+    const currentItems = [...hubItems].sort((a, b) => {
+      const orderA = a.order !== undefined ? a.order : 0;
+      const orderB = b.order !== undefined ? b.order : 0;
+      if (orderA !== orderB) {
+        return orderA - orderB;
+      }
+      return b.date.localeCompare(a.date);
+    });
+
+    const index = currentItems.findIndex(i => i.id === itemId);
+    if (index === -1) return;
+
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= currentItems.length) return;
+
+    const itemA = { ...currentItems[index] };
+    const itemB = { ...currentItems[targetIndex] };
+
+    // Initial order setups if undefined
+    if (itemA.order === undefined) itemA.order = index;
+    if (itemB.order === undefined) itemB.order = targetIndex;
+
+    const tempOrder = itemA.order;
+    itemA.order = itemB.order;
+    itemB.order = tempOrder;
+
+    // ensure no identical orders can conflict
+    if (itemA.order === itemB.order) {
+      if (direction === 'up') {
+        itemA.order = index - 1;
+        itemB.order = index;
+      } else {
+        itemA.order = index + 1;
+        itemB.order = index;
       }
     }
+
+    try {
+      await setDoc(doc(db, 'hubItems', itemA.id), sanitizeForFirestore(itemA));
+      await setDoc(doc(db, 'hubItems', itemB.id), sanitizeForFirestore(itemB));
+      showNotification('პოსტების თანამიმდევრობა განახლდა', 'success');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `hubItems/${itemA.id}`);
+      showNotification('თანამიმდევრობის შენახვა ვერ მოხერხდა', 'error');
+    }
   };
 
-  const handleUpdateSettings = async (settings: { fullDayDiscount: number; multiDayDiscount: number }) => {
+  const handleUpdateSettings = async (settings: any) => {
     try {
       await setDoc(doc(db, 'settings', 'bookingSettings'), sanitizeForFirestore(settings));
+      showNotification('პარამეტრები წარმატებით შეინახა', 'success');
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, 'settings/bookingSettings');
+      showNotification('პარამეტრების შენახვა ვერ მოხერხდა', 'error');
     }
   };
 
@@ -489,18 +794,15 @@ export default function App() {
       {/* Navigation Header */}
       <Navbar 
         currentTab={currentTab} 
-        setCurrentTab={(tab) => navigate(tab === 'admin' ? '/admin' : '/news')} 
+        setCurrentTab={(tab) => navigate(tab === 'admin' ? '/admin' : '/')} 
         activeSection={activeSection} 
         setActiveSection={handleNavigate} 
       />
 
       <main className="flex-grow">
         <Routes>
-          {/* Redirect root URL to /news */}
-          <Route path="/" element={<Navigate to="/news" replace />} />
-
-          {/* Page: /news */}
-          <Route path="/news" element={
+          {/* Page: / (Home) */}
+          <Route path="/" element={
             <div className="animate-fadeIn">
               {/* Maritime Sea-Themed Hero Banner */}
               <section className="relative bg-slate-900 py-24 sm:py-32 overflow-hidden text-white leading-snug">
@@ -559,23 +861,23 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Hub Stats Overlay */}
+                   {/* Hub Stats Overlay */}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-16 pt-8 border-t border-white/10 text-center">
                     <div className="bg-white/5 p-4 rounded-2xl border border-white/5">
-                      <span className="block font-display font-black text-2xl text-white">4+</span>
-                      <span className="block text-xs text-slate-400 mt-1 uppercase font-semibold">თანამედროვე სივრცე</span>
+                      <span className="block font-display font-black text-2xl text-white">{bookingSettings.stat1Value || '4+'}</span>
+                      <span className="block text-xs text-slate-400 mt-1 uppercase font-semibold">{bookingSettings.stat1Label || 'თანამედროვე სივრცე'}</span>
                     </div>
                     <div className="bg-white/5 p-4 rounded-2xl border border-white/5">
-                      <span className="block font-display font-black text-2xl text-white">2k+</span>
-                      <span className="block text-xs text-slate-400 mt-1 uppercase font-semibold">აქტიური წევრი</span>
+                      <span className="block font-display font-black text-2xl text-white">{bookingSettings.stat2Value || '2k+'}</span>
+                      <span className="block text-xs text-slate-400 mt-1 uppercase font-semibold">{bookingSettings.stat2Label || 'აქტიური წევრი'}</span>
                     </div>
                     <div className="bg-white/5 p-4 rounded-2xl border border-white/5">
-                      <span className="block font-display font-black text-2xl text-white">100%</span>
-                      <span className="block text-xs text-slate-400 mt-1 uppercase font-semibold">მხარდაჭერა</span>
+                      <span className="block font-display font-black text-2xl text-white">{bookingSettings.stat3Value || '100%'}</span>
+                      <span className="block text-xs text-slate-400 mt-1 uppercase font-semibold">{bookingSettings.stat3Label || 'მხარდაჭერა'}</span>
                     </div>
                     <div className="bg-white/5 p-4 rounded-2xl border border-white/5">
-                      <span className="block font-display font-black text-2xl text-white">12+</span>
-                      <span className="block text-xs text-slate-400 mt-1 uppercase font-semibold">მიმდინარე პროექტი</span>
+                      <span className="block font-display font-black text-2xl text-white">{bookingSettings.stat4Value || '12+'}</span>
+                      <span className="block text-xs text-slate-400 mt-1 uppercase font-semibold">{bookingSettings.stat4Label || 'მიმდინარე პროექტი'}</span>
                     </div>
                   </div>
 
@@ -605,6 +907,19 @@ export default function App() {
                   bookingSettings={bookingSettings}
                 />
               </div>
+            </div>
+          } />
+
+          {/* Redirect legacy /news URL to / */}
+          <Route path="/news" element={<Navigate to="/" replace />} />
+
+          {/* Dynamic News Page: /news/:id */}
+          <Route path="/news/:id" element={
+            <div className="animate-fadeIn">
+              <HubItemPage 
+                hubItems={hubItems} 
+                onNavigateToBooking={() => handleNavigate('booking')} 
+              />
             </div>
           } />
 
@@ -728,7 +1043,7 @@ export default function App() {
                            try {
                              await loginWithGoogle();
                            } catch (err) {
-                             alert("ავტორიზაცია ვერ მოხერხდა. გთხოვთ სცადოთ თავიდან.");
+                             showNotification("ავტორიზაცია ვერ მოხერხდა. გთხოვთ სცადოთ თავიდან.", "error");
                            }
                          }}
                          className="w-full py-4 bg-slate-900 hover:bg-slate-850 text-white rounded-2xl font-bold text-sm tracking-wide transition-all shadow-md active:scale-98 flex items-center justify-center space-x-3 cursor-pointer"
@@ -739,22 +1054,10 @@ export default function App() {
                          <span>ავტორიზაცია Google-ით</span>
                        </button>
 
-                       {/* Guest / Demo Option */}
                        <div className="pt-4 border-t border-slate-100">
-                         <span className="block text-xs text-slate-400">ან გააგრძელეთ სატესტო რეჟიმში:</span>
-                         <button
-                           onClick={() => {
-                             alert("თქვენ იმყოფებით საჩვენებელ დემო რეჟიმში. ცვლილებები შეინახება მხოლოდ ბრაუზერში სანამ არ გადატვირთავთ საიტს.");
-                             setUser({
-                               email: 'yhub.poti@gmail.com',
-                               emailVerified: true,
-                               uid: 'demo-admin-uid',
-                             } as any);
-                           }}
-                           className="mt-2 text-xs font-semibold text-brand-600 hover:text-brand-700 underline cursor-pointer"
-                         >
-                           ლოკალური დემო ადმინისტრატორი ➜
-                         </button>
+                         <p className="text-[11px] text-slate-400 font-sans">
+                           ავტორიზაცია ხელმისაწვდომია მხოლოდ დადასტურებული ადმინისტრატორებისთვის.
+                         </p>
                        </div>
                     </div>
                  </div>
@@ -794,6 +1097,9 @@ export default function App() {
                   onDeleteQuestion={handleDeleteQuestion}
                   onAddHubItem={handleAddHubItem}
                   onDeleteHubItem={handleDeleteHubItem}
+                  onDeleteBooking={handleDeleteBooking}
+                  onReorderRoom={handleReorderRoom}
+                  onReorderHubItem={handleReorderHubItem}
                 />
               </div>
             )
@@ -817,7 +1123,7 @@ export default function App() {
                 </div>
               </div>
               <p className="text-slate-400 text-xs sm:text-sm font-sans font-light leading-relaxed">
-                განათლების, ტექნოლოგიების, კარიერული ზრდისა და კულტურული განვითარების ცენტრი ქალაქ ფოთში. შემოგვიერთდი და მიიღე მონაწილეობა ჰაბის აქტივობებში.
+                {bookingSettings.footerTextUnderLogo || 'განათლების, ტექნოლოგიების, კარიერული ზრდისა და კულტურული განვითარების ცენტრი ქალაქ ფოთში. შემოგვიერთდი და მიიღე მონაწილეობა ჰაბის აქტივობებში.'}
               </p>
             </div>
 
@@ -878,13 +1184,15 @@ export default function App() {
           </div>
 
           <div className="mt-8 flex flex-col sm:flex-row justify-between items-center text-xs text-slate-500 gap-4">
-            <span className="font-sans font-medium">
-              © {new Date().getFullYear()} ფოთის ახალგაზრდული ჰაბი. ყველა უფლება დაცულია.
+            <span className="font-sans font-medium flex flex-wrap items-center gap-x-2">
+              <span>© {new Date().getFullYear()} ფოთის ახალგაზრდული ჰაბი. ყველა უფლება დაცულია.</span>
+              <span className="text-slate-600 hidden sm:inline">|</span>
+              <span className="text-brand-400/95 font-semibold">დამზადებულია AI ხელსაწყოების გამოყენებით</span>
             </span>
             <div className="flex items-center space-x-4">
               <button
                 id="footer-admin-sh"
-                onClick={() => navigate(currentTab === 'admin' ? '/news' : '/admin')}
+                onClick={() => navigate(currentTab === 'admin' ? '/' : '/admin')}
                 className="flex items-center space-x-1.5 hover:text-slate-300 font-bold transition-colors cursor-pointer"
               >
                 <ShieldCheck className="h-4 w-4 text-emerald-500" />
@@ -894,6 +1202,52 @@ export default function App() {
           </div>
         </div>
       </footer>
+
+      {/* Custom Confirmation Modal */}
+      {confirmModal.isOpen && (
+        <div className="fixed inset-0 z-55 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white rounded-3xl p-6 max-w-sm w-full border border-slate-100 shadow-2xl animate-scaleIn text-center">
+            <div className="w-12 h-12 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center mx-auto mb-4 border border-rose-100">
+              <ShieldAlert className="h-6 w-6" />
+            </div>
+            <h3 className="font-display font-black text-slate-900 text-lg mb-2">{confirmModal.title}</h3>
+            <p className="text-slate-500 text-xs font-sans leading-relaxed mb-6">{confirmModal.message}</p>
+            <div className="flex space-x-3">
+              <button
+                onClick={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+                className="flex-1 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-705 text-xs font-bold rounded-xl cursor-pointer transition-all"
+              >
+                გაუქმება
+              </button>
+              <button
+                onClick={confirmModal.onConfirm}
+                className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl cursor-pointer transition-all shadow-md shadow-rose-100 animate-pulse-subtle"
+              >
+                დიახ, წაშლა
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Toast Alert Banners */}
+      {notification && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-55 flex items-center space-x-2 bg-slate-900 text-white px-5 py-3 rounded-2xl shadow-xl border border-white/10 animate-slideDown max-w-sm w-[90%] justify-between text-xs sm:text-sm font-sans font-medium">
+          <div className="flex items-center space-x-2.5">
+            {notification.type === 'success' ? (
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shrink-0" />
+            ) : notification.type === 'error' ? (
+              <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shrink-0" />
+            ) : (
+              <span className="w-2.5 h-2.5 rounded-full bg-blue-400 shrink-0" />
+            )}
+            <span>{notification.message}</span>
+          </div>
+          <button onClick={() => setNotification(null)} className="text-white/60 hover:text-white pl-2">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
     </div>
   );
