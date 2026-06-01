@@ -333,7 +333,17 @@ export default function HubContent({ hubItems, onNavigateToBooking }: HubContent
                 >
                   დახურვა
                 </button>
-                {selectedItem.category !== 'news' && (
+                {selectedItem.category === 'training' ? (
+                  <a
+                    href={selectedItem.trainingButtonLink || '#'}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => setSelectedItem(null)}
+                    className="px-6 py-2.5 rounded-xl font-bold text-sm text-white bg-brand-500 hover:bg-brand-600 text-center transition-colors shadow-sm cursor-pointer flex items-center justify-center shrink-0"
+                  >
+                    {selectedItem.trainingButtonText || 'ლაივ რეგისტრაცია'}
+                  </a>
+                ) : selectedItem.category !== 'news' ? (
                   <button
                     onClick={() => {
                       setSelectedItem(null);
@@ -345,7 +355,7 @@ export default function HubContent({ hubItems, onNavigateToBooking }: HubContent
                   >
                     შეავსე განაცხადი / დაჯავშნე ოთახი
                   </button>
-                )}
+                ) : null}
               </div>
             </div>
           </div>

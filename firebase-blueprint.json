@@ -69,7 +69,10 @@
         "deadline": { "type": "string", "format": "date" },
         "location": { "type": "string" },
         "salaryRange": { "type": "string" },
-        "requirements": { "type": "array" }
+        "requirements": { "type": "array" },
+        "additionalImages": { "type": "array" },
+        "trainingButtonText": { "type": "string" },
+        "trainingButtonLink": { "type": "string" }
       },
       "required": ["id", "category", "title", "summary", "content", "date", "coverImage"]
     }

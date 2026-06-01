@@ -101,7 +101,9 @@ export const INITIAL_HUB_ITEMS: HubItem[] = [
     coverImage: 'https://images.unsplash.com/photo-1531403009284-440f080d1e12?auto=format&fit=crop&w=800&q=80',
     deadline: '2026-06-05',
     location: 'ჰაბის ტექნოლოგიების კლასი / ონლაინ ჰიბრიდული',
-    requirements: ['ასაკი: 15-29 წელი', 'საბაზისო კომპიუტერული უნარები', 'ინგლისური ენის მინიმალური A2 დონე მასალის გასაგებად']
+    requirements: ['ასაკი: 15-29 წელი', 'საბაზისო კომპიუტერული უნარები', 'ინგლისური ენის მინიმალური A2 დონე მასალის გასაგებად'],
+    trainingButtonText: 'დაიწყე სწავლა ახლავე',
+    trainingButtonLink: 'https://example.com/apply-react-course'
   },
   {
     id: 'h4',
@@ -113,7 +115,9 @@ export const INITIAL_HUB_ITEMS: HubItem[] = [
     coverImage: 'https://images.unsplash.com/photo-1590602847861-f357a9332bbc?auto=format&fit=crop&w=800&q=80',
     deadline: '2026-06-01',
     location: 'მედია და პოდკასტ ლაბორატორია',
-    requirements: ['ფოთში მცხოვრები ახალგაზრდები', 'საკუთარი იდეების პრეზენტაციის სურვილი', 'რეგისტრაციის ფორმის შევსება']
+    requirements: ['ფოთში მცხოვრები ახალგაზრდები', 'საკუთარი იდეების პრეზენტაციის სურვილი', 'რეგისტრაციის ფორმის შევსება'],
+    trainingButtonText: 'შეუკვეთე უფასო კონსულტაცია',
+    trainingButtonLink: 'https://example.com/podcast-consultation'
   },
   {
     id: 'h5',

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { HubItem, HubCategory } from '../types';
-import { Calendar, MapPin, Award, Clock, ArrowLeft, Briefcase, Trophy, GraduationCap, Share2, Check, HelpCircle } from 'lucide-react';
+import { Calendar, MapPin, Award, Clock, ArrowLeft, Briefcase, Trophy, GraduationCap, Share2, Check, HelpCircle, X } from 'lucide-react';
 // @ts-ignore
 import logoImg from '../assets/images/small-logo.png';
 
@@ -14,6 +14,7 @@ export default function HubItemPage({ hubItems, onNavigateToBooking }: HubItemPa
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [copied, setCopied] = useState(false);
+  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
 
   const item = hubItems.find((p) => p.id === id);
 
@@ -209,6 +210,36 @@ export default function HubItemPage({ hubItems, onNavigateToBooking }: HubItemPa
               {item.content}
             </div>
 
+            {/* Gallery (More than 1 picture if uploaded) */}
+            {item.additionalImages && item.additionalImages.length > 0 && (
+              <div className="mt-10 border-t border-slate-150 pt-8">
+                <h3 className="font-display font-black text-lg text-slate-900 mb-5 text-left">
+                  პუბლიკაციის გალერეა ({item.additionalImages.length})
+                </h3>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                  {item.additionalImages.map((imgUrl, index) => (
+                    <div 
+                      key={index} 
+                      onClick={() => setLightboxImage(imgUrl)}
+                      className="relative aspect-square sm:aspect-4/3 rounded-2xl overflow-hidden border border-slate-200 bg-slate-100 cursor-zoom-in group transition-all duration-300 hover:shadow-md hover:scale-[1.02] hover:border-slate-350"
+                    >
+                      <img
+                        src={imgUrl}
+                        alt={`გალერეა ${index + 1}`}
+                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                        referrerPolicy="no-referrer"
+                      />
+                      <div className="absolute inset-0 bg-slate-950/0 group-hover:bg-slate-950/15 transition-all flex items-center justify-center">
+                        <span className="opacity-0 group-hover:opacity-100 bg-white/90 text-slate-800 text-[11px] font-bold px-3 py-1.5 rounded-xl shadow-md transition-opacity duration-300">
+                          დიდი ზომით ნახვა
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Requirements / Conditions box */}
             {item.requirements && item.requirements.length > 0 && (
               <div className="mt-10 border-t border-slate-150 pt-8">
@@ -228,7 +259,22 @@ export default function HubItemPage({ hubItems, onNavigateToBooking }: HubItemPa
             )}
 
             {/* Action Call for Hub elements (Register/Book) */}
-            {item.category !== 'news' && (
+            {item.category === 'training' ? (
+              <div className="mt-12 p-6 bg-brand-50/50 border border-brand-100 rounded-3xl flex flex-col md:flex-row justify-between items-center gap-4">
+                <div className="text-left">
+                  <span className="block text-[11px] text-brand-600 font-bold uppercase tracking-wider">ჰაბის ინტეგრირებული სისტემა</span>
+                  <span className="block font-display font-bold text-slate-900 text-base mt-0.5">გსურს მონაწილეობის მიღება?</span>
+                </div>
+                <a
+                  href={item.trainingButtonLink || '#'}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-6 py-3.5 bg-brand-500 hover:bg-brand-600 text-white font-bold rounded-2xl text-sm transition-all shadow-md active:scale-98 cursor-pointer w-full md:w-auto text-center font-sans whitespace-nowrap flex items-center justify-center"
+                >
+                  {item.trainingButtonText || 'ლაივ რეგისტრაცია'}
+                </a>
+              </div>
+            ) : item.category !== 'news' ? (
               <div className="mt-12 p-6 bg-brand-50/50 border border-brand-100 rounded-3xl flex flex-col md:flex-row justify-between items-center gap-4">
                 <div className="text-left">
                   <span className="block text-[11px] text-brand-600 font-bold uppercase tracking-wider">ჰაბის ინტეგრირებული სისტემა</span>
@@ -241,12 +287,35 @@ export default function HubItemPage({ hubItems, onNavigateToBooking }: HubItemPa
                   შეავსე განაცხადი / დაჯავშნე ოთახი
                 </button>
               </div>
-            )}
+            ) : null}
 
           </div>
         </article>
 
       </div>
+
+      {lightboxImage && (
+        <div 
+          className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn cursor-zoom-out"
+          onClick={() => setLightboxImage(null)}
+        >
+          <button 
+            type="button"
+            onClick={() => setLightboxImage(null)}
+            className="absolute top-6 right-6 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer animate-scaleIn"
+          >
+            <X className="h-6 w-6" />
+          </button>
+          <div className="max-w-4xl max-h-[85vh] overflow-hidden rounded-2xl border border-white/15 bg-slate-900 shadow-2xl relative" onClick={(e) => e.stopPropagation()}>
+            <img 
+              src={lightboxImage} 
+              alt="სურათის ხედი" 
+              className="max-w-full max-h-[85vh] object-contain rounded-xl transition-all"
+              referrerPolicy="no-referrer"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

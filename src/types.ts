@@ -18,6 +18,9 @@ export interface HubItem {
   salaryRange?: string; // for vacancies
   requirements?: string[]; // for vacancies/contests/trainings Max capacity, etc.
   order?: number; // custom ordering
+  additionalImages?: string[]; // extra gallery images
+  trainingButtonText?: string; // custom button text for training category
+  trainingButtonLink?: string; // custom button link for training category
 }
 
 export interface MediaItem {

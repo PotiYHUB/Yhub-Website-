@@ -9,8 +9,12 @@ import AdminCalendar from './AdminCalendar';
 import { 
   Check, X, Plus, Trash2, Edit, Calendar, Users, DollarSign, Mail, 
   Clock, ShieldAlert, FileText, LayoutList, ListPlus, Send, MessageSquarePlus, Sparkles, HelpCircle, Settings as SettingsIcon, Percent,
-  ArrowUp, ArrowDown, Table, Download, Globe, Eye, Share2, Search
+  ArrowUp, ArrowDown, Table, Download, Globe, Eye, Share2, Search,
+  Upload, Image as ImageIcon, Loader2
 } from 'lucide-react';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { storage } from '../firebase';
+import { optimizeImageForWeb, blobToBase64 } from '../utils/imageOptimizer';
 
 interface AdminPanelProps {
   rooms: Room[];
@@ -265,6 +269,13 @@ export default function AdminPanel({
   const [hubLocation, setHubLocation] = useState('');
   const [hubSalary, setHubSalary] = useState('');
   const [hubReqs, setHubReqs] = useState('');
+  const [hubTrainingButtonText, setHubTrainingButtonText] = useState('');
+  const [hubTrainingButtonLink, setHubTrainingButtonLink] = useState('');
+  const [trainingButtonValidationError, setTrainingButtonValidationError] = useState('');
+  const [hubAdditionalImages, setHubAdditionalImages] = useState<string[]>([]);
+  const [coverUploading, setCoverUploading] = useState(false);
+  const [additionalUploading, setAdditionalUploading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
 
   // Booking statistics
   const pendingCount = bookings.filter(b => b.status === 'pending').length;
@@ -380,10 +391,109 @@ export default function AdminPanel({
     setQOptions('');
   };
 
+  // Upload and Web-Optimize image function (Fallback to Base64 on storage fail or timeout)
+  const processAndUploadImage = async (file: File): Promise<string> => {
+    try {
+      // 1. Client-side canvas compression to webp/jpeg with max 1000px dimension and 0.65 quality (ultra-optimized for fast web load and compact size)
+      const optimizedBlob = await optimizeImageForWeb(file, 1000, 1000, 0.65);
+      
+      try {
+        // 2. Try Firebase Storage upload with a fast 3.5-second timeout
+        const cleanName = file.name.replace(/[^a-zA-Z0-9.]/g, '');
+        const storageRef = ref(storage, `hub_posts/${Date.now()}_${cleanName}`);
+        
+        const uploadPromise = uploadBytes(storageRef, optimizedBlob);
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Firebase Storage upload timeout')), 3500)
+        );
+        
+        const uploadResult = await Promise.race([uploadPromise, timeoutPromise]);
+        
+        // Fetch download URL with a fast 2-second timeout as well
+        const urlPromise = getDownloadURL(uploadResult.ref);
+        const urlTimeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Firebase Download URL timeout')), 2000)
+        );
+        
+        const downloadUrl = await Promise.race([urlPromise, urlTimeoutPromise]);
+        return downloadUrl;
+      } catch (storageErr) {
+        console.warn('Firebase Storage blocked, timed out, or unconfigured. Falling back to client-side optimized Base64 string:', storageErr);
+        // Fallback: Convert optimized WebP blob directly to Base64 and return
+        const base64Str = await blobToBase64(optimizedBlob);
+        return base64Str;
+      }
+    } catch (err) {
+      console.error('Image compression and optimization failed:', err);
+      throw err;
+    }
+  };
+
+  const handleCoverUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setCoverUploading(true);
+    setUploadError('');
+    try {
+      const url = await processAndUploadImage(file);
+      setHubCover(url);
+    } catch (err: any) {
+      setUploadError('ფოტოს ატვირთვა ვერ მოხერხდა: ' + (err.message || String(err)));
+    } finally {
+      setCoverUploading(false);
+    }
+  };
+
+  const handleAdditionalImagesUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    setAdditionalUploading(true);
+    setUploadError('');
+    try {
+      const uploadedUrls: string[] = [];
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const url = await processAndUploadImage(file);
+        uploadedUrls.push(url);
+      }
+      setHubAdditionalImages((prev) => [...prev, ...uploadedUrls]);
+    } catch (err: any) {
+      setUploadError('დამატებითი ფოტოების ატვირთვა ვერ მოხერხდა: ' + (err.message || String(err)));
+    } finally {
+      setAdditionalUploading(false);
+    }
+  };
+
+  const handleRemoveAdditionalImage = (index: number) => {
+    setHubAdditionalImages((prev) => prev.filter((_, i) => i !== index));
+  };
+
   // Hub Content submitter
   const handleHubSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!hubTitle || !hubSummary || !hubContent) return;
+
+    // Validate custom button fields for training posts
+    if (hubCat === 'training') {
+      const btnTextCleaned = hubTrainingButtonText.trim();
+      const btnLinkCleaned = hubTrainingButtonLink.trim();
+
+      if (!btnTextCleaned || !btnLinkCleaned) {
+        setTrainingButtonValidationError('გთხოვთ მიუთითოთ სპეციფიკური ღილაკის სახელი და რეგისტრაციის ბმული ტრენინგის პოსტისთვის.');
+        return;
+      }
+
+      const lowerText = btnTextCleaned.toLowerCase();
+      const blockedTerms = ['დამატებითი ინფორმაცია', 'სარეგისტრაციო ფორმა', 'განაცხადი'];
+      for (const term of blockedTerms) {
+        if (lowerText === term || lowerText.includes(term)) {
+          setTrainingButtonValidationError(`ღილაკის სახელი არ შეიძლება იყოს "${term}" ან შეიცავდეს მას! გთხოვთ გამოიყენოთ სხვა სპეციფიკური სახელი.`);
+          return;
+        }
+      }
+    }
 
     const reqsArr = hubReqs ? hubReqs.split('\n').map(r => r.trim()).filter(Boolean) : undefined;
     const fallbackImage = hubCover || 'https://images.unsplash.com/photo-1504384308090-c894fdcc538d?auto=format&fit=crop&w=800&q=80';
@@ -399,7 +509,10 @@ export default function AdminPanel({
       deadline: hubDeadline || undefined,
       location: hubLocation || undefined,
       salaryRange: hubSalary || undefined,
-      requirements: reqsArr
+      requirements: reqsArr,
+      additionalImages: hubAdditionalImages.length > 0 ? hubAdditionalImages : undefined,
+      trainingButtonText: hubCat === 'training' ? hubTrainingButtonText.trim() : undefined,
+      trainingButtonLink: hubCat === 'training' ? hubTrainingButtonLink.trim() : undefined
     });
 
     setHubTitle('');
@@ -410,6 +523,10 @@ export default function AdminPanel({
     setHubLocation('');
     setHubSalary('');
     setHubReqs('');
+    setHubTrainingButtonText('');
+    setHubTrainingButtonLink('');
+    setTrainingButtonValidationError('');
+    setHubAdditionalImages([]);
     setShowHubForm(false);
   };
 
@@ -1290,6 +1407,56 @@ export default function AdminPanel({
                           </div>
                         )}
 
+                        {hubCat === 'training' && (
+                          <div className="sm:col-span-2 border-t border-dashed border-slate-300 pt-4 mt-2 space-y-3">
+                            <h4 className="text-xs font-bold text-brand-600 uppercase tracking-wider">რეგისტრაციის ღილაკის ინტერფეისი</h4>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-[11px] font-bold text-slate-500 mb-1">ღილაკის სათაური *</label>
+                                <input
+                                  id="admin-hub-training-btn-text"
+                                  type="text"
+                                  value={hubTrainingButtonText}
+                                  onChange={(e) => {
+                                    setHubTrainingButtonText(e.target.value);
+                                    const text = e.target.value.toLowerCase();
+                                    const blockedTerms = ['დამატებითი ინფორმაცია', 'სარეგისტრაციო ფორმა', 'განაცხადი'];
+                                    let errorFound = '';
+                                    for (const term of blockedTerms) {
+                                      if (text === term || text.includes(term)) {
+                                        errorFound = `ღილაკის სახელი არ შეიძლება იყოს "${term}" ან შეიცავდეს მას!`;
+                                        break;
+                                      }
+                                    }
+                                    setTrainingButtonValidationError(errorFound);
+                                  }}
+                                  placeholder="მაგ: დაიწყე სწავლა"
+                                  className={`w-full p-2.5 bg-white border ${trainingButtonValidationError ? 'border-red-400 focus:border-red-500 bg-red-50/20' : 'border-slate-200'} rounded-xl text-xs focus:outline-hidden`}
+                                  required={hubCat === 'training'}
+                                />
+                                {trainingButtonValidationError && (
+                                  <p className="text-red-500 text-[10px] mt-1 font-bold">
+                                    {trainingButtonValidationError}
+                                  </p>
+                                )}
+                              </div>
+
+                              <div>
+                                <label className="block text-[11px] font-bold text-slate-500 mb-1">რეგისტრაციის ბმული (URL) *</label>
+                                <input
+                                  id="admin-hub-training-btn-link"
+                                  type="url"
+                                  value={hubTrainingButtonLink}
+                                  onChange={(e) => setHubTrainingButtonLink(e.target.value)}
+                                  placeholder="მაგ: https://forms.gle/your-form"
+                                  className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs focus:outline-hidden"
+                                  required={hubCat === 'training'}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
                         <div className="sm:col-span-2">
                           <label className="block text-xs font-bold text-slate-500 mb-1">მოთხოვნები (თითო ხაზზე თითო მოთხოვნა)</label>
                           <textarea
@@ -1304,17 +1471,125 @@ export default function AdminPanel({
                       </div>
                     )}
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-xs font-bold text-slate-500 mb-1">სურათის ლინკი (Cover Image / URL) *</label>
-                        <input
-                          id="admin-hub-cover"
-                          type="text"
-                          value={hubCover}
-                          onChange={(e) => setHubCover(e.target.value)}
-                          placeholder="https://images.unsplash.com/... ან ატვირთული ფოტოს ლინკი"
-                          className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs focus:outline-hidden font-mono"
-                        />
+                    {/* Image uploads block */}
+                    <div className="space-y-4 p-4.5 bg-slate-100 rounded-2xl border border-slate-200">
+                      <span className="block text-xs font-extrabold uppercase text-slate-600 tracking-wider">მედია ფაილების ატვირთვა (ოპტიმიზებული ვებ-ჩატვირთვისთვის)</span>
+
+                      {uploadError && (
+                        <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-600 text-xs font-sans">
+                          {uploadError}
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        
+                        {/* 1. Cover Image Upload */}
+                        <div className="p-4 bg-white rounded-xl border border-slate-200/60 shadow-xs space-y-3">
+                          <label className="block text-xs font-bold text-slate-700">მთავარი გარეკანის ფოტო (Cover Image)</label>
+                          
+                          <div className="flex items-center space-x-3">
+                            <div className="relative w-24 h-16 rounded-lg bg-slate-100 border border-slate-200 overflow-hidden flex items-center justify-center shrink-0">
+                              {hubCover ? (
+                                <img
+                                  src={hubCover}
+                                  alt="Cover preview"
+                                  className="w-full h-full object-cover"
+                                  referrerPolicy="no-referrer"
+                                />
+                              ) : (
+                                <ImageIcon className="h-5 w-5 text-slate-400" />
+                              )}
+                              {coverUploading && (
+                                <div className="absolute inset-0 bg-white/70 flex items-center justify-center">
+                                  <Loader2 className="h-4 w-4 text-slate-800 animate-spin" />
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="flex-1 space-y-1.5">
+                              <label className="inline-flex items-center px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold rounded-lg cursor-pointer transition-colors shadow-2xs">
+                                <Upload className="h-3 w-3 mr-1" />
+                                <span>ფაილის ატვირთვა</span>
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  onChange={handleCoverUpload}
+                                  className="hidden"
+                                />
+                              </label>
+                              <span className="block text-[10px] text-slate-400 font-sans">ან ჩაწერეთ ლინკი:</span>
+                            </div>
+                          </div>
+
+                          <input
+                            id="admin-hub-cover"
+                            type="text"
+                            value={hubCover}
+                            onChange={(e) => setHubCover(e.target.value)}
+                            placeholder="https://images.unsplash.com/... ან ატვირთული ფოტოს ლინკი"
+                            className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:bg-white focus:outline-hidden font-mono"
+                          />
+                        </div>
+
+                        {/* 2. Additional Pictures Upload */}
+                        <div className="p-4 bg-white rounded-xl border border-slate-200/60 shadow-xs space-y-3">
+                          <label className="block text-xs font-bold text-slate-700">დამატებითი სურათები (გალერეა)</label>
+                          
+                          <div className="flex items-center space-x-3">
+                            <div className="flex-1 space-y-1">
+                              <label className="inline-flex items-center px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold rounded-lg cursor-pointer transition-colors shadow-2xs">
+                                <Plus className="h-3 w-3 mr-1" />
+                                <span>რამდენიმე ფოტოს ატვირთვა</span>
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  multiple
+                                  onChange={handleAdditionalImagesUpload}
+                                  className="hidden"
+                                />
+                              </label>
+                              <span className="block text-[10px] text-slate-400 font-sans leading-tight">
+                                შეგიძლიათ აირჩიოთ რამდენიმე ფოტო ერთად. ფოტოები კომპრესირდება ვებ-ოპტიმიზებული ზომისთვის.
+                              </span>
+                            </div>
+                            
+                            {additionalUploading && (
+                              <div className="flex items-center space-x-1.5 shrink-0 bg-slate-50 px-2 py-1 rounded-lg border border-slate-100">
+                                <Loader2 className="h-3.5 w-3.5 text-slate-700 animate-spin" />
+                                <span className="text-[10px] font-bold text-slate-600 font-sans">იტვირთება...</span>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Extra uploaded list container */}
+                          {hubAdditionalImages.length > 0 && (
+                            <div className="mt-2 space-y-1.5 max-h-36 overflow-y-auto border border-slate-100 p-2 rounded-lg bg-slate-50">
+                              <span className="block text-[9px] font-black uppercase text-slate-450 tracking-wider">დამატებული ფოტოები ({hubAdditionalImages.length}):</span>
+                              
+                              <div className="grid grid-cols-4 gap-2">
+                                {hubAdditionalImages.map((imgUrl, idx) => (
+                                  <div key={idx} className="relative aspect-video rounded-md overflow-hidden bg-slate-200 border border-slate-300">
+                                    <img
+                                      src={imgUrl}
+                                      alt={`Preview ${idx + 1}`}
+                                      className="w-full h-full object-cover"
+                                      referrerPolicy="no-referrer"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveAdditionalImage(idx)}
+                                      className="absolute top-0.5 right-0.5 p-1 bg-red-650 hover:bg-red-700 text-white rounded-md cursor-pointer transition-colors"
+                                      title="წაშლა"
+                                    >
+                                      <Trash2 className="h-2.5 w-2.5" />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
                       </div>
                     </div>
 
