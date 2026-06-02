@@ -5,7 +5,7 @@
 
 import React, { useState } from 'react';
 import { MediaItem } from '../types';
-import { Image, Play, Calendar, X, Eye, Film } from 'lucide-react';
+import { Image, Play, Calendar, X, Eye, Film, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface GallerySectionProps {
   mediaItems: MediaItem[];
@@ -20,6 +20,41 @@ export default function GallerySection({ mediaItems }: GallerySectionProps) {
     if (activeFilter === 'all') return true;
     return item.type === activeFilter;
   });
+
+  const currentItemsList = filteredMedia.length > 0 ? filteredMedia : mediaItems;
+  const currentIndex = currentItemsList.findIndex(item => item.id === lightboxItem?.id);
+
+  const handlePrev = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (currentItemsList.length === 0) return;
+    const prevIndex = (currentIndex - 1 + currentItemsList.length) % currentItemsList.length;
+    setLightboxItem(currentItemsList[prevIndex]);
+    setPlayerTipActive(false);
+  };
+
+  const handleNext = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (currentItemsList.length === 0) return;
+    const nextIndex = (currentIndex + 1) % currentItemsList.length;
+    setLightboxItem(currentItemsList[nextIndex]);
+    setPlayerTipActive(false);
+  };
+
+  React.useEffect(() => {
+    if (!lightboxItem) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft') {
+        handlePrev();
+      } else if (e.key === 'ArrowRight') {
+        handleNext();
+      } else if (e.key === 'Escape') {
+        setLightboxItem(null);
+        setPlayerTipActive(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [lightboxItem, currentIndex, currentItemsList]);
 
   return (
     <section id="gallery" className="py-16 bg-slate-900 text-white relative overflow-hidden">
@@ -120,77 +155,126 @@ export default function GallerySection({ mediaItems }: GallerySectionProps) {
 
         {/* Lightbox Modal */}
         {lightboxItem && (
-          <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex flex-col justify-center items-center p-4">
-            <button
-              onClick={() => {
-                setLightboxItem(null);
-                setPlayerTipActive(false);
-              }}
-              className="absolute top-6 right-6 bg-white/10 hover:bg-white/20 text-white p-3 rounded-full cursor-pointer transition-colors"
-            >
-              <X className="h-6 w-6" />
-            </button>
-
-            <div className="w-full max-w-4xl max-h-[80vh] flex justify-center items-center overflow-hidden">
-              {lightboxItem.type === 'video' ? (
-                // Beautifully simulated high-fidelity mock video layout with playback controls simulation
-                <div className="relative w-full aspect-video max-w-3xl bg-slate-950 rounded-2xl overflow-hidden border border-white/10 shadow-2xl flex flex-col justify-center items-center p-6 text-center">
-                  {playerTipActive && (
-                    <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-slate-900 border border-white/10 px-4 py-2 rounded-xl text-[11px] text-amber-300 font-sans shadow-xl animate-bounce">
-                      ვიდეო მასალები მალე ხელმისაწვდომი იქნება YouTube-ზე!
-                    </div>
-                  )}
-                  <div className="absolute top-4 left-4 bg-red-600 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest flex items-center space-x-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping"></span>
-                    <span>HD ვიდეო</span>
-                  </div>
-                  <Film className="h-16 w-16 text-brand-500 mb-4 animate-bounce" />
-                  <h3 className="font-display font-extrabold text-xl sm:text-2xl text-white mb-2">
-                    {lightboxItem.caption}
-                  </h3>
-                  <p className="text-slate-400 text-sm max-w-md font-sans mb-6">
-                    ვიდეო მასალა მზადდება და ჩაწერილია მედია და პოდკასტ ლაბორატორიაში.
-                  </p>
-                  <div className="flex space-x-3">
-                    <button
-                      onClick={() => {
-                        setPlayerTipActive(true);
-                        setTimeout(() => setPlayerTipActive(false), 3500);
-                      }}
-                      className="px-6 py-2.5 bg-brand-500 hover:bg-brand-600 text-slate-900 rounded-xl text-sm font-black transition-colors flex items-center space-x-2 cursor-pointer"
-                    >
-                      <Play className="h-4 w-4 fill-slate-900" />
-                      <span>ვიდეოს ჩართვა (YouTube)</span>
-                    </button>
-                    <button
-                      onClick={() => {
-                        setLightboxItem(null);
-                        setPlayerTipActive(false);
-                      }}
-                      className="px-5 py-2.5 bg-white/10 hover:bg-white/15 text-white rounded-xl text-sm font-bold border border-white/5 transition-colors cursor-pointer"
-                    >
-                      დახურვა
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <img
-                  src={lightboxItem.url}
-                  alt={lightboxItem.caption}
-                  referrerPolicy="no-referrer"
-                  className="max-h-full max-w-full rounded-2xl object-contain border border-white/10 shadow-2xl"
-                />
-              )}
+          <div 
+            className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-xl flex flex-col justify-between p-4 sm:p-6"
+            onClick={() => {
+              setLightboxItem(null);
+              setPlayerTipActive(false);
+            }}
+          >
+            {/* Top Control Bar */}
+            <div className="w-full flex justify-between items-center z-10 py-2 border-b border-white/5" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center space-x-3 text-xs sm:text-sm font-sans text-slate-300">
+                <span className="px-2.5 py-1 bg-white/10 rounded-full text-[10px] font-bold uppercase tracking-wider text-brand-400">
+                  {lightboxItem.type === 'video' ? 'ვიდეო' : 'ფოტო'}
+                </span>
+                <span className="font-mono text-slate-400">
+                  {currentIndex + 1} / {currentItemsList.length}
+                </span>
+              </div>
+              
+              <button
+                onClick={() => {
+                  setLightboxItem(null);
+                  setPlayerTipActive(false);
+                }}
+                className="flex items-center space-x-1.5 px-3.5 py-1.5 bg-white/10 hover:bg-rose-600/80 text-white hover:text-white rounded-xl text-xs font-bold cursor-pointer transition-all border border-white/15"
+                title="დახურვა [Esc]"
+              >
+                <X className="h-4 w-4" />
+                <span className="hidden sm:inline">დახურვა</span>
+              </button>
             </div>
 
-            {/* Lightbox Caption */}
-            <div className="mt-6 text-center max-w-2xl px-4">
-              <span className="text-brand-400 text-xs font-semibold font-mono tracking-wider block mb-1.5">
-                {lightboxItem.date}
-              </span>
-              <p className="font-display text-base text-slate-200">
+            {/* Middle Main Content Slider Stage */}
+            <div className="flex-1 flex items-center justify-between my-auto w-full max-w-7xl mx-auto relative group">
+              {/* Left Arrow Button */}
+              <button
+                onClick={handlePrev}
+                className="absolute left-2 sm:left-4 z-10 p-3 sm:p-4 rounded-full bg-slate-900/85 hover:bg-brand-500 hover:text-slate-950 text-white border border-white/10 hover:border-brand-400 shadow-lg group-hover:scale-105 transition-all outline-hidden cursor-pointer flex items-center justify-center"
+                title="წინა სურათი"
+              >
+                <ChevronLeft className="h-6 w-6" />
+              </button>
+
+              {/* Main Media display container */}
+              <div 
+                className="w-full max-h-[65vh] flex justify-center items-center overflow-hidden px-12 sm:px-16"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {lightboxItem.type === 'video' ? (
+                  // Beautifully simulated high-fidelity mock video layout with playback controls simulation
+                  <div className="relative w-full aspect-video max-w-3xl bg-slate-950 rounded-2xl overflow-hidden border border-white/10 shadow-2xl flex flex-col justify-center items-center p-6 text-center">
+                    {playerTipActive && (
+                      <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-slate-900 border border-white/10 px-4 py-2 rounded-xl text-[11px] text-amber-300 font-sans shadow-xl animate-bounce">
+                        ვიდეო მასალები მალე ხელმისაწვდომი იქნება YouTube-ზე!
+                      </div>
+                    )}
+                    <div className="absolute top-4 left-4 bg-red-600 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest flex items-center space-x-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping"></span>
+                      <span>HD ვიდეო</span>
+                    </div>
+                    <Film className="h-16 w-16 text-brand-500 mb-4 animate-bounce" />
+                    <h3 className="font-display font-extrabold text-xl sm:text-2xl text-white mb-2">
+                      {lightboxItem.caption}
+                    </h3>
+                    <p className="text-slate-400 text-sm max-w-md font-sans mb-6">
+                      ვიდეო მასალა მზადდება და ჩაწერილია მედია და პოდკასტ ლაბორატორიაში.
+                    </p>
+                    <div className="flex space-x-3">
+                      <button
+                        onClick={() => {
+                          setPlayerTipActive(true);
+                          setTimeout(() => setPlayerTipActive(false), 3500);
+                        }}
+                        className="px-6 py-2.5 bg-brand-500 hover:bg-brand-600 text-slate-900 rounded-xl text-sm font-black transition-colors flex items-center space-x-2 cursor-pointer"
+                      >
+                        <Play className="h-4 w-4 fill-slate-900" />
+                        <span>ვიდეოს ჩართვა (YouTube)</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setLightboxItem(null);
+                          setPlayerTipActive(false);
+                        }}
+                        className="px-5 py-2.5 bg-white/10 hover:bg-white/15 text-white rounded-xl text-sm font-bold border border-white/5 transition-colors cursor-pointer"
+                      >
+                        დახურვა
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <img
+                    src={lightboxItem.url}
+                    alt={lightboxItem.caption}
+                    referrerPolicy="no-referrer"
+                    className="max-h-[60vh] max-w-full rounded-2xl object-contain border border-white/10 shadow-2xl transition-all duration-300"
+                  />
+                )}
+              </div>
+
+              {/* Right Arrow Button */}
+              <button
+                onClick={handleNext}
+                className="absolute right-2 sm:right-4 z-10 p-3 sm:p-4 rounded-full bg-slate-900/85 hover:bg-brand-500 hover:text-slate-950 text-white border border-white/10 hover:border-brand-400 shadow-lg group-hover:scale-105 transition-all outline-hidden cursor-pointer flex items-center justify-center"
+                title="შემდეგი სურათი"
+              >
+                <ChevronRight className="h-6 w-6" />
+              </button>
+            </div>
+
+            {/* Bottom Info Bar representing Date & Text Description clearly */}
+            <div 
+              className="w-full bg-slate-950/60 border-t border-white/5 rounded-2xl p-4 sm:p-5 text-center mt-auto z-10 max-w-3xl mx-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex justify-center items-center space-x-2 text-brand-400 text-xs font-semibold font-mono tracking-wider mb-2">
+                <Calendar className="h-3.5 w-3.5 text-brand-400" />
+                <span>{lightboxItem.date}</span>
+              </div>
+              <h4 className="font-display text-sm sm:text-base text-slate-100 font-bold max-w-2xl mx-auto leading-relaxed">
                 {lightboxItem.caption}
-              </p>
+              </h4>
             </div>
           </div>
         )}

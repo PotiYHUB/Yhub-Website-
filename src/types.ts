@@ -30,6 +30,7 @@ export interface MediaItem {
   url: string; // image path or YouTube embed/video link
   caption: string;
   date: string;
+  order?: number; // Sorting/priority order
 }
 
 export interface Room {

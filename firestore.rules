@@ -25,14 +25,19 @@ service cloud.firestore {
     // Entity Validations
     function isValidRoom(data) {
       return data.keys().hasAll(['id', 'name', 'description', 'capacity', 'price', 'imageUrl', 'features']) &&
-             data.keys().size() == 7 &&
+             data.keys().size() >= 7 && data.keys().size() <= 13 &&
              data.id is string && data.id.size() <= 128 &&
              data.name is string && data.name.size() <= 256 &&
              data.description is string && data.description.size() <= 2000 &&
              data.capacity is int && data.capacity >= 1 && data.capacity <= 10000 &&
              (data.price is int || data.price is float) && data.price >= 0 &&
-             data.imageUrl is string && data.imageUrl.size() <= 1000 &&
-             data.features is list && data.features.size() <= 40;
+             data.imageUrl is string && data.imageUrl.size() <= 2000000 &&
+             data.features is list && data.features.size() <= 40 &&
+             (!('dayPrice' in data) || (data.dayPrice is int || data.dayPrice is float)) &&
+             (!('imageUrls' in data) || (data.imageUrls is list && data.imageUrls.size() <= 20)) &&
+             (!('panoramaUrl' in data) || (data.panoramaUrl is string && data.panoramaUrl.size() <= 1000)) &&
+             (!('videoUrl' in data) || (data.videoUrl is string && data.videoUrl.size() <= 1000)) &&
+             (!('order' in data) || (data.order is int || data.order is float));
     }
 
     function isValidCustomQuestion(data) {
@@ -55,7 +60,7 @@ service cloud.firestore {
              data.summary is string && data.summary.size() <= 1000 &&
              data.content is string && data.content.size() <= 15000 &&
              data.date is string && data.date.size() <= 64 &&
-             data.coverImage is string && data.coverImage.size() <= 1000 &&
+             data.coverImage is string && data.coverImage.size() <= 2000000 &&
              (!('deadline' in data) || (data.deadline is string && data.deadline.size() <= 64)) &&
              (!('location' in data) || (data.location is string && data.location.size() <= 256)) &&
              (!('salaryRange' in data) || (data.salaryRange is string && data.salaryRange.size() <= 256)) &&
@@ -86,6 +91,17 @@ service cloud.firestore {
              (!('organization' in data) || (data.organization is string && data.organization.size() <= 256)) &&
              (!('invoiceNumber' in data) || (data.invoiceNumber is string && data.invoiceNumber.size() <= 128)) &&
              (!('adminNotes' in data) || (data.adminNotes is string && data.adminNotes.size() <= 1000));
+    }
+
+    function isValidMediaItem(data) {
+      return data.keys().hasAll(['id', 'type', 'url', 'caption', 'date']) &&
+             data.keys().size() >= 5 && data.keys().size() <= 8 &&
+             data.id is string && data.id.size() <= 128 &&
+             data.type is string && (data.type == 'photo' || data.type == 'video') &&
+             data.url is string && data.url.size() <= 2000000 &&
+             data.caption is string && data.caption.size() <= 1000 &&
+             data.date is string && data.date.size() <= 64 &&
+             (!('order' in data) || (data.order is int || data.order is float));
     }
 
     // Rules for each Collection
@@ -122,6 +138,13 @@ service cloud.firestore {
       // Only admins can approve, reject, or delete bookings
       allow update: if isAdmin() && isValidId(bookingId) && isValidBooking(request.resource.data);
       allow delete: if isAdmin() && isValidId(bookingId);
+    }
+
+    match /mediaItems/{itemId} {
+      allow read: if true;
+      allow create: if isAdmin() && isValidId(itemId) && isValidMediaItem(request.resource.data);
+      allow update: if isAdmin() && isValidId(itemId) && isValidMediaItem(request.resource.data);
+      allow delete: if isAdmin() && isValidId(itemId);
     }
 
     match /settings/{settingId} {

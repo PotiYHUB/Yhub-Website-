@@ -76,6 +76,20 @@
         "customUrl": { "type": "string" }
       },
       "required": ["id", "category", "title", "summary", "content", "date", "coverImage"]
+    },
+    "MediaItem": {
+      "title": "MediaItem",
+      "description": "Photo or video media item for the public gallery",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["photo", "video"] },
+        "url": { "type": "string" },
+        "caption": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "order": { "type": "number" }
+      },
+      "required": ["id", "type", "url", "caption", "date"]
     }
   },
   "firestore": {
@@ -94,6 +108,10 @@
     "hubItems": {
       "schema": "HubItem",
       "description": "CMS blog/news/events item metadata"
+    },
+    "mediaItems": {
+      "schema": "MediaItem",
+      "description": "Media items shown in public gallery"
     }
   }
 }

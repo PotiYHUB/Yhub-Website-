@@ -4,13 +4,13 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Room, Booking, CustomQuestion, HubItem, HubCategory } from '../types';
+import { Room, Booking, CustomQuestion, HubItem, HubCategory, MediaItem } from '../types';
 import AdminCalendar from './AdminCalendar';
 import { 
   Check, X, Plus, Trash2, Edit, Calendar, Users, DollarSign, Mail, 
   Clock, ShieldAlert, FileText, LayoutList, ListPlus, Send, MessageSquarePlus, Sparkles, HelpCircle, Settings as SettingsIcon, Percent,
   ArrowUp, ArrowDown, Table, Download, Globe, Eye, Share2, Search,
-  Upload, Image as ImageIcon, Loader2, Printer, FileSpreadsheet
+  Upload, Image as ImageIcon, Loader2, Printer, FileSpreadsheet, Play
 } from 'lucide-react';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage } from '../firebase';
@@ -23,6 +23,7 @@ interface AdminPanelProps {
   bookings: Booking[];
   customQuestions: CustomQuestion[];
   hubItems: HubItem[];
+  mediaItems?: MediaItem[];
   bookingSettings: any;
   simulatedEmails: any[];
   onUpdateSettings: (settings: any) => void;
@@ -36,10 +37,14 @@ interface AdminPanelProps {
   onAddHubItem: (item: HubItem) => void;
   onUpdateHubItem?: (item: HubItem) => void;
   onDeleteHubItem: (id: string) => void;
+  onAddMediaItem?: (item: MediaItem) => void;
+  onUpdateMediaItem?: (item: MediaItem) => void;
+  onDeleteMediaItem?: (id: string) => void;
   onDeleteBooking: (id: string) => void;
   onDeleteEmail?: (id: string) => void;
   onReorderRoom?: (id: string, direction: 'up' | 'down') => void;
   onReorderHubItem?: (id: string, direction: 'up' | 'down') => void;
+  onLogOut?: () => void;
 }
 
 export default function AdminPanel({
@@ -47,6 +52,7 @@ export default function AdminPanel({
   bookings,
   customQuestions,
   hubItems,
+  mediaItems = [],
   bookingSettings,
   simulatedEmails,
   onUpdateSettings,
@@ -60,12 +66,16 @@ export default function AdminPanel({
   onAddHubItem,
   onUpdateHubItem,
   onDeleteHubItem,
+  onAddMediaItem,
+  onUpdateMediaItem,
+  onDeleteMediaItem,
   onDeleteBooking,
   onDeleteEmail,
   onReorderRoom,
-  onReorderHubItem
+  onReorderHubItem,
+  onLogOut
 }: AdminPanelProps) {
-  const [activeAdminTab, setActiveAdminTab] = useState<'bookings' | 'rooms' | 'questions' | 'hub' | 'emails' | 'calendar' | 'settings'>('bookings');
+  const [activeAdminTab, setActiveAdminTab] = useState<'bookings' | 'rooms' | 'questions' | 'hub' | 'gallery' | 'emails' | 'calendar' | 'settings'>('bookings');
   
   // SEO Local States for Live Metadata Previews
   const [seoTitle, setSeoTitle] = useState('');
@@ -271,6 +281,9 @@ export default function AdminPanel({
   const [roomPrice, setRoomPrice] = useState(15);
   const [roomDayPrice, setRoomDayPrice] = useState(120);
   const [roomImg, setRoomImg] = useState('');
+  const [roomAdditionalImages, setRoomAdditionalImages] = useState<string[]>([]);
+  const [roomCoverUploading, setRoomCoverUploading] = useState(false);
+  const [roomAdditionalUploading, setRoomAdditionalUploading] = useState(false);
   const [roomFeatures, setRoomFeatures] = useState('');
   const [roomPanoramaUrl, setRoomPanoramaUrl] = useState('');
   const [roomVideoUrl, setRoomVideoUrl] = useState('');
@@ -303,6 +316,17 @@ export default function AdminPanel({
   const [editHubItemId, setEditHubItemId] = useState<string | null>(null);
   const [hubCustomUrl, setHubCustomUrl] = useState('');
 
+  // CMS Gallery / Media Item States
+  const [showMediaForm, setShowMediaForm] = useState(false);
+  const [mediaItemType, setMediaItemType] = useState<'photo' | 'video'>('photo');
+  const [mediaItemCaption, setMediaItemCaption] = useState('');
+  const [mediaItemUrl, setMediaItemUrl] = useState('');
+  const [mediaItemDate, setMediaItemDate] = useState(new Date().toISOString().split('T')[0]);
+  const [mediaItemOrder, setMediaItemOrder] = useState<number>(0);
+  const [editMediaItemId, setEditMediaItemId] = useState<string | null>(null);
+  const [mediaUploading, setMediaUploading] = useState(false);
+  const [mediaFilter, setMediaFilter] = useState<'all' | 'photo' | 'video'>('all');
+
   // Booking statistics
   const pendingCount = bookings.filter(b => b.status === 'pending').length;
   const approvedCount = bookings.filter(b => b.status === 'approved').length;
@@ -327,6 +351,7 @@ export default function AdminPanel({
         price: Number(roomPrice),
         dayPrice: Number(roomDayPrice),
         imageUrl: fallbackImg,
+        imageUrls: roomAdditionalImages.length > 0 ? roomAdditionalImages : undefined,
         features: featuresArr,
         panoramaUrl: roomPanoramaUrl || undefined,
         videoUrl: roomVideoUrl || undefined
@@ -341,6 +366,7 @@ export default function AdminPanel({
         price: Number(roomPrice),
         dayPrice: Number(roomDayPrice),
         imageUrl: fallbackImg,
+        imageUrls: roomAdditionalImages.length > 0 ? roomAdditionalImages : undefined,
         features: featuresArr,
         panoramaUrl: roomPanoramaUrl || undefined,
         videoUrl: roomVideoUrl || undefined
@@ -354,6 +380,7 @@ export default function AdminPanel({
     setRoomPrice(15);
     setRoomDayPrice(120);
     setRoomImg('');
+    setRoomAdditionalImages([]);
     setRoomFeatures('');
     setRoomPanoramaUrl('');
     setRoomVideoUrl('');
@@ -369,6 +396,7 @@ export default function AdminPanel({
     setRoomPrice(room.price);
     setRoomDayPrice(room.dayPrice || Math.round(room.price * 8));
     setRoomImg(room.imageUrl);
+    setRoomAdditionalImages(room.imageUrls || []);
     setRoomFeatures(room.features.join(', '));
     setRoomPanoramaUrl(room.panoramaUrl || '');
     setRoomVideoUrl(room.videoUrl || '');
@@ -453,6 +481,105 @@ export default function AdminPanel({
       console.error('Image compression and optimization failed:', err);
       throw err;
     }
+  };
+
+  const handleMediaImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setMediaUploading(true);
+    setUploadError('');
+    try {
+      const url = await processAndUploadImage(file);
+      setMediaItemUrl(url);
+    } catch (err: any) {
+      setUploadError('ფოტოს ატვირთვა ვერ მოხერხდა: ' + (err.message || String(err)));
+    } finally {
+      setMediaUploading(false);
+    }
+  };
+
+  const handleRoomCoverUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setRoomCoverUploading(true);
+    setUploadError('');
+    try {
+      const url = await processAndUploadImage(file);
+      setRoomImg(url);
+    } catch (err: any) {
+      setUploadError('ოთახის მთავარი ფოტოს ატვირთვა ვერ მოხერხდა: ' + (err.message || String(err)));
+    } finally {
+      setRoomCoverUploading(false);
+    }
+  };
+
+  const handleRoomAdditionalImagesUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    setRoomAdditionalUploading(true);
+    setUploadError('');
+    try {
+      const uploadedUrls: string[] = [];
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const url = await processAndUploadImage(file);
+        uploadedUrls.push(url);
+      }
+      setRoomAdditionalImages((prev) => [...prev, ...uploadedUrls]);
+    } catch (err: any) {
+      setUploadError('ოთახის დამატებითი ფოტოების ატვირთვა ვერ მოხერხდა: ' + (err.message || String(err)));
+    } finally {
+      setRoomAdditionalUploading(false);
+    }
+  };
+
+  const handleRemoveRoomAdditionalImage = (index: number) => {
+    setRoomAdditionalImages((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleMediaSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!mediaItemCaption || !mediaItemUrl) {
+      alert('გთხოვთ შეავსოთ აღწერა და მედია ფაილის ლინკი/ატვირთოთ ფოტო');
+      return;
+    }
+
+    const item: MediaItem = {
+      id: editMediaItemId || 'media_' + Date.now().toString(36),
+      type: mediaItemType,
+      caption: mediaItemCaption,
+      url: mediaItemUrl,
+      date: mediaItemDate,
+      order: mediaItemOrder || 0
+    };
+
+    if (editMediaItemId) {
+      onUpdateMediaItem?.(item);
+    } else {
+      onAddMediaItem?.(item);
+    }
+
+    // Reset Form
+    setShowMediaForm(false);
+    setEditMediaItemId(null);
+    setMediaItemCaption('');
+    setMediaItemUrl('');
+    setMediaItemDate(new Date().toISOString().split('T')[0]);
+    setMediaItemOrder(0);
+    setMediaItemType('photo');
+  };
+
+  const handleEditMediaClick = (item: MediaItem) => {
+    setEditMediaItemId(item.id);
+    setMediaItemType(item.type);
+    setMediaItemCaption(item.caption);
+    setMediaItemUrl(item.url);
+    setMediaItemDate(item.date);
+    setMediaItemOrder(item.order || 0);
+    setShowMediaForm(true);
   };
 
   const handleCoverUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -592,7 +719,7 @@ export default function AdminPanel({
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Admin Header */}
-        <div className="bg-slate-900 rounded-3xl p-6 sm:p-10 text-white mb-8 flex flex-col md:flex-row justify-between items-start md:items-center shadow-md">
+        <div id="admin-main-header" className="bg-slate-900 rounded-3xl p-6 sm:p-10 text-white mb-8 flex flex-col md:flex-row justify-between items-start md:items-center shadow-md gap-6">
           <div className="mb-4 md:mb-0">
             <div className="flex items-center space-x-2 text-emerald-400 text-xs font-bold font-mono uppercase tracking-wider">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
@@ -602,20 +729,31 @@ export default function AdminPanel({
               ჰაბის ადმინისტრირება
             </h1>
           </div>
-          <div className="flex space-x-3">
-            <div className="bg-white/10 px-4 py-2 rounded-xl text-center border border-white/5">
-              <span className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider">მომლოდინე</span>
-              <span className="font-mono text-xl font-bold font-display text-amber-300">{pendingCount}</span>
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto shrink-0">
+            <div className="flex space-x-3">
+              <div className="bg-white/10 px-4 py-2 rounded-xl text-center border border-white/5 shrink-0">
+                <span className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider">მომლოდინე</span>
+                <span className="font-mono text-xl font-bold font-display text-amber-300">{pendingCount}</span>
+              </div>
+              <div className="bg-white/10 px-4 py-2 rounded-xl text-center border border-white/5 shrink-0">
+                <span className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider">სულ ჯავშნები</span>
+                <span className="font-mono text-xl font-bold font-display text-emerald-400">{bookings.length}</span>
+              </div>
             </div>
-            <div className="bg-white/10 px-4 py-2 rounded-xl text-center border border-white/5">
-              <span className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider">სულ ჯავშნები</span>
-              <span className="font-mono text-xl font-bold font-display text-emerald-400">{bookings.length}</span>
-            </div>
+            {onLogOut && (
+              <button
+                type="button"
+                onClick={onLogOut}
+                className="px-4 py-2.5 bg-rose-600/20 hover:bg-rose-600/35 text-rose-300 hover:text-white border border-rose-500/30 text-xs font-bold rounded-xl cursor-pointer transition-colors sm:self-stretch flex items-center justify-center whitespace-nowrap min-h-[42px]"
+              >
+                სისტემიდან გამოსვლა
+              </button>
+            )}
           </div>
         </div>
 
         {/* Inner Tab bar and CMS Panels */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        <div id="admin-main-tabs-grid" className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           
           {/* Navigation drawer (Left Pane) */}
           <div className="lg:col-span-3 bg-white border border-slate-200/50 rounded-2xl p-4 space-y-1.5 shadow-sm">
@@ -684,6 +822,18 @@ export default function AdminPanel({
             >
               <Sparkles className="h-4.5 w-4.5" />
               <span>კონტენტის CMS (სიახლეები)</span>
+            </button>
+
+            <button
+              onClick={() => setActiveAdminTab('gallery')}
+              className={`flex items-center space-x-3 w-full px-4 py-3 rounded-xl text-sm font-semibold text-left transition-colors cursor-pointer ${
+                activeAdminTab === 'gallery'
+                  ? 'bg-slate-900 text-white'
+                  : 'text-slate-650 hover:bg-slate-50'
+              }`}
+            >
+              <ImageIcon className="h-4.5 w-4.5 text-blue-500" />
+              <span>გალერეის მართვა (ფოტო/ვიდეო)</span>
             </button>
 
             <button
@@ -1045,7 +1195,7 @@ export default function AdminPanel({
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
+                      <div className="sm:col-span-2">
                         <label className="block text-xs font-bold text-slate-500 mb-1">მაქსიმალური ტევადობა (ადამიანი) *</label>
                         <input
                           id="admin-room-capacity"
@@ -1057,16 +1207,113 @@ export default function AdminPanel({
                         />
                       </div>
 
-                      <div>
-                        <label className="block text-xs font-bold text-slate-500 mb-1">ფოტო ბმული (ImageUrl URL)</label>
-                        <input
-                          id="admin-room-image"
-                          type="url"
-                          value={roomImg}
-                          onChange={(e) => setRoomImg(e.target.value)}
-                          placeholder="https://images.unsplash.com/..."
-                          className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-sans focus:outline-hidden"
-                        />
+                      {/* Main Cover Image and Additional Images */}
+                      <div className="sm:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* 1. Main Cover Image Upload */}
+                        <div className="p-4 bg-white rounded-xl border border-slate-205 shadow-xs space-y-3">
+                          <label className="block text-xs font-bold text-slate-700">მთავარი გარეკანი (Cover Image) *</label>
+                          <div className="flex items-center space-x-3">
+                            <div className="relative w-12 h-12 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center overflow-hidden shrink-0">
+                              {roomImg ? (
+                                <img
+                                  src={roomImg}
+                                  alt="Room cover preview"
+                                  className="w-full h-full object-cover"
+                                  referrerPolicy="no-referrer"
+                                />
+                              ) : (
+                                <ImageIcon className="h-5 w-5 text-slate-400" />
+                              )}
+                              {roomCoverUploading && (
+                                <div className="absolute inset-0 bg-white/70 flex items-center justify-center">
+                                  <Loader2 className="h-4 w-4 text-slate-800 animate-spin" />
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="flex-1 space-y-1.5">
+                              <label className="inline-flex items-center px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold rounded-lg cursor-pointer transition-colors shadow-2xs">
+                                <Upload className="h-3 w-3 mr-1" />
+                                <span>სურათის ატვირთვა</span>
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  onChange={handleRoomCoverUpload}
+                                  className="hidden"
+                                />
+                              </label>
+                              <span className="block text-[10px] text-slate-400 font-sans">ან ჩაწერეთ ლინკი:</span>
+                            </div>
+                          </div>
+
+                          <input
+                            id="admin-room-image"
+                            type="url"
+                            value={roomImg}
+                            onChange={(e) => setRoomImg(e.target.value)}
+                            placeholder="https://images.unsplash.com/... ან ატვირთული ფოტოს ლინკი"
+                            className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:bg-white focus:outline-hidden font-mono"
+                          />
+                        </div>
+
+                        {/* 2. Additional Pictures Upload */}
+                        <div className="p-4 bg-white rounded-xl border border-slate-205 shadow-xs space-y-3">
+                          <label className="block text-xs font-bold text-slate-700">დამატებითი სურათები (გალერეა)</label>
+                          
+                          <div className="flex items-center space-x-3">
+                            <div className="flex-1 space-y-1">
+                              <label className="inline-flex items-center px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold rounded-lg cursor-pointer transition-colors shadow-2xs">
+                                <Plus className="h-3 w-3 mr-1" />
+                                <span>რამდენიმე ფოტოს ატვირთვა</span>
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  multiple
+                                  onChange={handleRoomAdditionalImagesUpload}
+                                  className="hidden"
+                                />
+                              </label>
+                              <span className="block text-[10px] text-slate-400 font-sans leading-tight">
+                                შეგიძლიათ აირჩიოთ რამდენიმე ფოტო ერთად.
+                              </span>
+                            </div>
+                            
+                            {roomAdditionalUploading && (
+                              <div className="flex items-center space-x-1.5 shrink-0 bg-slate-50 px-2 py-1 rounded-lg border border-slate-100">
+                                <Loader2 className="h-3.5 w-3.5 text-slate-700 animate-spin" />
+                                <span className="text-[10px] font-bold text-slate-600 font-sans">იტვირთება...</span>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Extra uploaded list container */}
+                          {roomAdditionalImages.length > 0 && (
+                            <div className="mt-2 space-y-1.5 max-h-36 overflow-y-auto border border-slate-100 p-2 rounded-lg bg-slate-50">
+                              <span className="block text-[9px] font-black uppercase text-slate-450 tracking-wider">დამატებული ფოტოები ({roomAdditionalImages.length}):</span>
+                              
+                              <div className="grid grid-cols-4 gap-2">
+                                {roomAdditionalImages.map((imgUrl, idx) => (
+                                  <div key={idx} className="relative aspect-video rounded-md overflow-hidden bg-slate-200 border border-slate-300">
+                                    <img
+                                      src={imgUrl}
+                                      alt={`Preview ${idx + 1}`}
+                                      className="w-full h-full object-cover"
+                                      referrerPolicy="no-referrer"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveRoomAdditionalImage(idx)}
+                                      className="absolute top-0.5 right-0.5 p-1 bg-red-650 hover:bg-red-700 text-white rounded-md cursor-pointer transition-colors"
+                                      title="წაშლა"
+                                    >
+                                      <Trash2 className="h-2.5 w-2.5" />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
 
@@ -1813,6 +2060,307 @@ export default function AdminPanel({
               </div>
             )}
 
+            {/* CMS GALLERY TAB */}
+            {activeAdminTab === 'gallery' && (
+              <div className="bg-white border border-slate-200/60 rounded-3xl p-6 sm:p-8 shadow-sm">
+                
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-100 pb-5 mb-6 gap-4">
+                  <div>
+                    <h2 className="font-display font-black text-xl text-slate-900">გალერეის მართვა</h2>
+                    <p className="text-slate-500 text-xs font-sans mt-1 font-semibold">დაამატეთ, განაახლეთ ან წაშალეთ სახალხო გალერეის ფოტო და ვიდეო მასალები.</p>
+                  </div>
+                  {!showMediaForm && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditMediaItemId(null);
+                        setMediaItemType('photo');
+                        setMediaItemCaption('');
+                        setMediaItemUrl('');
+                        setMediaItemDate(new Date().toISOString().split('T')[0]);
+                        setMediaItemOrder(0);
+                        setShowMediaForm(true);
+                      }}
+                      className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-black transition-all shadow-xs flex items-center space-x-2 cursor-pointer"
+                    >
+                      <Plus className="h-4 w-4" />
+                      <span>მედია ფაილის დამატება</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Inline Media Item Form */}
+                {showMediaForm && (
+                  <form id="admin-gallery-form" onSubmit={handleMediaSubmit} className="bg-slate-50 border border-slate-200/60 rounded-2xl p-5 mb-8 animate-fadeIn">
+                    <h3 className="font-display font-bold text-slate-800 mb-4 text-base flex items-center space-x-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                      <span>{editMediaItemId ? 'მედია მასალის რედაქტირება' : 'ახალი მედია მასალის დამატება'}</span>
+                    </h3>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4.5 mb-5">
+                      {/* Media type */}
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">მედიის ტიპი</label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setMediaItemType('photo')}
+                            className={`py-2.5 rounded-xl border text-xs font-bold transition-all cursor-pointer text-center ${
+                              mediaItemType === 'photo'
+                                ? 'bg-slate-900 border-slate-900 text-white shadow-xs'
+                                : 'bg-white border-slate-200 text-slate-650 hover:bg-slate-50'
+                            }`}
+                          >
+                            ფოტო
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setMediaItemType('video')}
+                            className={`py-2.5 rounded-xl border text-xs font-bold transition-all cursor-pointer text-center ${
+                              mediaItemType === 'video'
+                                ? 'bg-slate-900 border-slate-900 text-white shadow-xs'
+                                : 'bg-white border-slate-200 text-slate-650 hover:bg-slate-50'
+                            }`}
+                          >
+                            ვიდეო
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Date picker */}
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">თარიღი</label>
+                        <div className="relative">
+                          <input
+                            type="date"
+                            required
+                            value={mediaItemDate}
+                            onChange={(e) => setMediaItemDate(e.target.value)}
+                            className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2 text-xs font-sans focus:outline-hidden focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Text caption / description */}
+                      <div className="md:col-span-2">
+                        <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">აღწერა / წარწერა (თანმხლები ტექსტი, რომელიც გამოჩნდება გალერეაში)</label>
+                        <textarea
+                          rows={3}
+                          required
+                          placeholder="შეიყვანეთ ინფორმაცია ან ფოტოს კონტექსტი, მაგალითად: ჰაბის წევრების შეხვედრა ფრანგ კოლეგებთან..."
+                          value={mediaItemCaption}
+                          onChange={(e) => setMediaItemCaption(e.target.value)}
+                          className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-xs font-sans focus:outline-hidden focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                        />
+                      </div>
+
+                      {/* Media URL / Upload Image */}
+                      <div className="md:col-span-2">
+                        <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                          {mediaItemType === 'photo' ? 'ფოტო ფაილის ატვირთვა ან ლინკი' : 'ვიდეოს YouTube ლინკი (Embed)'}
+                        </label>
+                        
+                        {mediaItemType === 'photo' ? (
+                          <div className="space-y-3">
+                            <div className="flex flex-col sm:flex-row items-stretch gap-2.5">
+                              <input
+                                type="text"
+                                placeholder="შეიყვანეთ გამოსახულების URL (ან ატვირთეთ ქვემოთ)"
+                                value={mediaItemUrl}
+                                onChange={(e) => setMediaItemUrl(e.target.value)}
+                                className="flex-1 bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-sans focus:outline-hidden focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                              />
+                              
+                              <div className="relative flex items-center">
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  onChange={handleMediaImageUpload}
+                                  id="admin-gallery-file-input"
+                                  className="hidden"
+                                />
+                                <label
+                                  htmlFor="admin-gallery-file-input"
+                                  className="px-5 py-2.5 bg-slate-200 hover:bg-slate-350 text-slate-800 rounded-xl text-xs font-bold cursor-pointer transition-all flex items-center space-x-2 w-full text-center justify-center border border-slate-300"
+                                >
+                                  {mediaUploading ? (
+                                    <>
+                                      <Loader2 className="h-4 w-4 animate-spin text-slate-700" />
+                                      <span>იტვირთება...</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Upload className="h-4 w-4 text-slate-650" />
+                                      <span>ფოტოს ატვირთვა</span>
+                                    </>
+                                  )}
+                                </label>
+                              </div>
+                            </div>
+
+                            {uploadError && (
+                              <p className="text-rose-600 text-[11px] font-sans italic">{uploadError}</p>
+                            )}
+
+                            {mediaItemUrl && (
+                              <div className="mt-2 bg-white p-2.5 border border-slate-250 rounded-xl inline-block max-w-[200px]">
+                                <p className="text-[10px] font-mono text-slate-550 mb-1 truncate">{mediaItemUrl}</p>
+                                <img
+                                  src={mediaItemUrl}
+                                  alt="Preview"
+                                  referrerPolicy="no-referrer"
+                                  className="h-28 w-44 object-cover rounded-lg border border-slate-100"
+                                />
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            <input
+                              type="text"
+                              required
+                              placeholder="მაგ: https://www.youtube.com/embed/dQw4w9WgXcQ"
+                              value={mediaItemUrl}
+                              onChange={(e) => setMediaItemUrl(e.target.value)}
+                              className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-sans focus:outline-hidden focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                            />
+                            <p className="text-slate-450 text-[10px] sm:text-[11px] font-sans">
+                              ვიდეო მასალებისთვის გთხოვთ გამოიყენოთ YouTube-ის გაზიარების (embed) ლინკი მაქსიმალური თავსებადობისთვის.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Display / Sorting Order */}
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">რიგითობის ნომერი (პრიორიტეტი)</label>
+                        <input
+                          type="number"
+                          value={mediaItemOrder}
+                          onChange={(e) => setMediaItemOrder(Number(e.target.value))}
+                          className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-xs font-sans"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end space-x-2.5 border-t border-slate-200/50 pt-4">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowMediaForm(false);
+                          setEditMediaItemId(null);
+                          setMediaItemCaption('');
+                          setMediaItemUrl('');
+                        }}
+                        className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                      >
+                        გაუქმება
+                      </button>
+                      <button
+                        type="submit"
+                        className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black transition-all shadow-xs flex items-center space-x-1.5 cursor-pointer"
+                      >
+                        <Check className="h-4 w-4" />
+                        <span>{editMediaItemId ? 'განახლება' : 'დამატება'}</span>
+                      </button>
+                    </div>
+                  </form>
+                )}
+
+                {/* Media Filters Bar */}
+                <div className="flex space-x-2 border-b border-slate-100 pb-4 mb-6">
+                  {(['all', 'photo', 'video'] as const).map((filter) => (
+                    <button
+                      key={filter}
+                      onClick={() => setMediaFilter(filter)}
+                      className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                        mediaFilter === filter
+                          ? 'bg-slate-900 text-white shadow-xs'
+                          : 'bg-slate-50 border border-slate-200/40 text-slate-650 hover:bg-slate-100'
+                      }`}
+                    >
+                      {filter === 'all' ? 'ყველა' : filter === 'photo' ? 'ფოტოები' : 'ვიდეოები'}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Media Grid */}
+                {mediaItems.length === 0 ? (
+                  <div className="py-12 text-center text-slate-450 font-sans border-2 border-dashed border-slate-200 rounded-3xl">
+                    მედია მასალები არ მოიძებნა.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {mediaItems
+                      .filter(item => mediaFilter === 'all' || item.type === mediaFilter)
+                      .map((item) => (
+                        <div key={item.id} className="group bg-slate-50 border border-slate-200/60 rounded-2xl overflow-hidden shadow-xs flex flex-col justify-between hover:shadow-md transition-all">
+                          {/* Preview Aspect */}
+                          <div className="relative aspect-video bg-slate-900 border-b border-slate-150 overflow-hidden">
+                            {item.type === 'video' ? (
+                              <div className="absolute inset-0 flex flex-col justify-center items-center bg-slate-950/40 text-white p-4">
+                                <div className="p-3 bg-red-600 rounded-full mb-2">
+                                  <Play className="h-5 w-5 fill-white text-white" />
+                                </div>
+                                <span className="font-sans text-[10px] font-bold tracking-widest uppercase text-white bg-black/60 px-2 py-0.5 rounded-md">
+                                  ვიდეო მასალა
+                                </span>
+                              </div>
+                            ) : (
+                              <img
+                                src={item.url}
+                                alt={item.caption}
+                                referrerPolicy="no-referrer"
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                              />
+                            )}
+                            
+                            {/* Meta flags */}
+                            <div className="absolute top-2.5 left-2.5 bg-slate-900/90 text-white text-[10px] font-bold font-mono px-2 py-1 rounded-md">
+                              {item.date}
+                            </div>
+
+                            {item.order !== undefined && (
+                              <div className="absolute top-2.5 right-2.5 bg-slate-900/95 text-brand-400 text-[10px] font-bold font-mono px-2 py-1 rounded-md animate-pulse">
+                                რიგი: {item.order}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Body Caption Info */}
+                          <div className="p-4 flex-1 flex flex-col justify-between">
+                            <p className="font-sans text-xs text-slate-700 leading-relaxed font-semibold mb-4 line-clamp-3">
+                              {item.caption}
+                            </p>
+
+                            {/* Actions bar at bottom of card */}
+                            <div className="flex justify-end space-x-2 border-t border-slate-200/50 pt-3">
+                              <button
+                                type="button"
+                                onClick={() => handleEditMediaClick(item)}
+                                className="p-2 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg cursor-pointer transition-colors"
+                                title="რედაქტირება"
+                              >
+                                <Edit className="h-4 w-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => onDeleteMediaItem?.(item.id)}
+                                className="p-2 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg cursor-pointer transition-colors"
+                                title="წაშლა"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                )}
+
+              </div>
+            )}
+
             {/* TAB 5: DISPATCHED SIMULATED EMAILS LOGS */}
             {activeAdminTab === 'emails' && (
               <div className="bg-white border border-slate-200/60 rounded-3xl p-6 sm:p-8 shadow-sm">
@@ -2481,7 +3029,7 @@ export default function AdminPanel({
 
         {/* Google Spreadsheet-like Detailed Grid and Report Panel */}
         {isSpreadsheetOpen && (
-          <div className="fixed inset-0 z-55 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-hidden">
+          <div id="admin-spreadsheet-modal" className="fixed inset-0 z-55 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 overflow-hidden">
             <div className="bg-[#f9fbf9] rounded-2xl w-full max-w-6xl shadow-2xl flex flex-col h-[85vh] overflow-hidden border border-emerald-600/20 font-sans text-slate-800">
               
               {/* Google Sheets Header bar */}
@@ -2786,12 +3334,25 @@ export default function AdminPanel({
           <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-md flex justify-center items-center p-4 overflow-y-auto">
             <style dangerouslySetInnerHTML={{ __html: `
               @media print {
+                @page {
+                  size: A4 portrait;
+                  margin: 0 !important;
+                }
                 html, body {
                   height: auto !important;
                   overflow: visible !important;
                   margin: 0 !important;
                   padding: 0 !important;
                   background: white !important;
+                }
+                /* Hide main page layouts completely from layout calculation to resolve empty pages */
+                header, nav, footer, hr, #admin-main-header, #admin-main-tabs-grid, #admin-spreadsheet-modal {
+                  display: none !important;
+                  height: 0 !important;
+                  overflow: hidden !important;
+                  margin: 0 !important;
+                  padding: 0 !important;
+                  border: none !important;
                 }
                 body * {
                   visibility: hidden !important;

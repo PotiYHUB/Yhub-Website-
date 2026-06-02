@@ -103,7 +103,7 @@ export default function App() {
   const [bookings, setBookings] = useState<Booking[]>(INITIAL_BOOKINGS);
   const [customQuestions, setCustomQuestions] = useState<CustomQuestion[]>(DEFAULT_CUSTOM_QUESTIONS);
   const [hubItems, setHubItems] = useState<HubItem[]>(INITIAL_HUB_ITEMS);
-  const [mediaItems] = useState<MediaItem[]>(INITIAL_MEDIA_ITEMS);
+  const [mediaItems, setMediaItems] = useState<MediaItem[]>(INITIAL_MEDIA_ITEMS);
   const [bookingSettings, setBookingSettings] = useState({
     fullDayDiscount: 10,
     multiDayDiscount: 15,
@@ -357,11 +357,50 @@ export default function App() {
       }
     );
 
+    // E. Subscribe to mediaItems
+    const unsubscribeMediaItems = onSnapshot(
+      collection(db, 'mediaItems'),
+      (snapshot) => {
+        const list: MediaItem[] = [];
+        snapshot.forEach((doc) => {
+          list.push(doc.data() as MediaItem);
+        });
+
+        if (list.length === 0) {
+          setMediaItems(INITIAL_MEDIA_ITEMS);
+          if (auth.currentUser?.email === 'yhub.poti@gmail.com') {
+            INITIAL_MEDIA_ITEMS.forEach(async (item) => {
+              try {
+                await setDoc(doc(db, 'mediaItems', item.id), sanitizeForFirestore(item));
+              } catch (err) {
+                console.error("Bootstrapping media error:", err);
+              }
+            });
+          }
+        } else {
+          list.sort((a, b) => {
+            const orderA = a.order !== undefined ? a.order : 0;
+            const orderB = b.order !== undefined ? b.order : 0;
+            if (orderA !== orderB) {
+              return orderA - orderB;
+            }
+            return b.date.localeCompare(a.date);
+          });
+          setMediaItems(list);
+        }
+      },
+      (error) => {
+        console.warn("Firestore mediaItems read failed. Using fallback.", error);
+        setMediaItems(INITIAL_MEDIA_ITEMS);
+      }
+    );
+
     return () => {
       unsubscribeRooms();
       unsubscribeQuestions();
       unsubscribeHub();
       unsubscribeSettings();
+      unsubscribeMediaItems();
     };
   }, [user]);
 
@@ -798,6 +837,42 @@ export default function App() {
     }
   };
 
+  const handleAddMediaItem = async (item: MediaItem) => {
+    try {
+      await setDoc(doc(db, 'mediaItems', item.id), sanitizeForFirestore(item));
+      showNotification('მედია წარმატებით დაემატა', 'success');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.CREATE, `mediaItems/${item.id}`);
+      showNotification('მედიის დამატება ვერ მოხერხდა', 'error');
+    }
+  };
+
+  const handleUpdateMediaItem = async (item: MediaItem) => {
+    try {
+      await setDoc(doc(db, 'mediaItems', item.id), sanitizeForFirestore(item));
+      showNotification('მედია წარმატებით განახლდა', 'success');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `mediaItems/${item.id}`);
+      showNotification('მედიის განახლება ვერ მოხერხდა', 'error');
+    }
+  };
+
+  const handleDeleteMediaItem = (id: string) => {
+    triggerConfirm(
+      'მედიის წაშლა',
+      'ნამდვილად გსურთ მედია ფაილის წაშლა გალერეიდან?',
+      async () => {
+        try {
+          await deleteDoc(doc(db, 'mediaItems', id));
+          showNotification('მედია წარმატებით წაიშალა', 'success');
+        } catch (err) {
+          handleFirestoreError(err, OperationType.DELETE, `mediaItems/${id}`);
+          showNotification('მედიის წაშლა ვერ მოხერხდა', 'error');
+        }
+      }
+    );
+  };
+
   const handleUpdateSettings = async (settings: any) => {
     try {
       await setDoc(doc(db, 'settings', 'bookingSettings'), sanitizeForFirestore(settings));
@@ -1084,27 +1159,12 @@ export default function App() {
               </div>
             ) : (
               <div className="animate-fadeIn">
-                {/* Admin info bar */}
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6">
-                  <div className="bg-emerald-50 border border-emerald-150 rounded-2xl p-4 flex flex-col sm:flex-row justify-between items-center text-xs font-sans text-emerald-800 gap-4">
-                    <div className="flex items-center space-x-2">
-                      <span className="flex h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                      <span>შესული ხართ როგორც ადმინისტრატორი: <strong>{user?.email}</strong></span>
-                    </div>
-                    <button 
-                      onClick={() => auth.signOut()}
-                      className="px-4 py-1.5 bg-white border border-emerald-200 text-emerald-700 font-bold rounded-xl hover:bg-emerald-100 transition-colors cursor-pointer"
-                    >
-                      სისტემიდან გამოსვლა
-                    </button>
-                  </div>
-                </div>
-                
                 <AdminPanel 
                   rooms={rooms}
                   bookings={bookings}
                   customQuestions={customQuestions}
                   hubItems={hubItems}
+                  mediaItems={mediaItems}
                   bookingSettings={bookingSettings}
                   simulatedEmails={emails}
                   onUpdateSettings={handleUpdateSettings}
@@ -1118,10 +1178,14 @@ export default function App() {
                   onAddHubItem={handleAddHubItem}
                   onUpdateHubItem={handleUpdateHubItem}
                   onDeleteHubItem={handleDeleteHubItem}
+                  onAddMediaItem={handleAddMediaItem}
+                  onUpdateMediaItem={handleUpdateMediaItem}
+                  onDeleteMediaItem={handleDeleteMediaItem}
                   onDeleteBooking={handleDeleteBooking}
                   onDeleteEmail={handleDeleteEmail}
                   onReorderRoom={handleReorderRoom}
                   onReorderHubItem={handleReorderHubItem}
+                  onLogOut={() => auth.signOut()}
                 />
               </div>
             )
