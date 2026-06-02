@@ -48,9 +48,9 @@ service cloud.firestore {
 
     function isValidHubItem(data) {
       return data.keys().hasAll(['id', 'category', 'title', 'summary', 'content', 'date', 'coverImage']) &&
-             data.keys().size() >= 7 && data.keys().size() <= 14 &&
+             data.keys().size() >= 7 && data.keys().size() <= 16 &&
              data.id is string && data.id.size() <= 128 &&
-             data.category is string && (data.category == 'news' || data.category == 'vacancy' || data.category == 'contest' || data.category == 'training') &&
+             data.category is string && (data.category == 'news' || data.category == 'vacancy' || data.category == 'contest' || data.category == 'training' || data.category == 'general') &&
              data.title is string && data.title.size() <= 256 &&
              data.summary is string && data.summary.size() <= 1000 &&
              data.content is string && data.content.size() <= 15000 &&
@@ -62,7 +62,8 @@ service cloud.firestore {
              (!('requirements' in data) || (data.requirements is list && data.requirements.size() <= 30)) &&
              (!('additionalImages' in data) || (data.additionalImages is list && data.additionalImages.size() <= 30)) &&
              (!('trainingButtonText' in data) || (data.trainingButtonText is string && data.trainingButtonText.size() <= 256)) &&
-             (!('trainingButtonLink' in data) || (data.trainingButtonLink is string && data.trainingButtonLink.size() <= 1000));
+             (!('trainingButtonLink' in data) || (data.trainingButtonLink is string && data.trainingButtonLink.size() <= 1000)) &&
+             (!('customUrl' in data) || (data.customUrl is string && data.customUrl.size() <= 1000));
     }
 
     function isValidBooking(data) {

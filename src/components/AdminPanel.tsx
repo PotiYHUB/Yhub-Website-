@@ -32,8 +32,10 @@ interface AdminPanelProps {
   onAddQuestion: (q: CustomQuestion) => void;
   onDeleteQuestion: (id: string) => void;
   onAddHubItem: (item: HubItem) => void;
+  onUpdateHubItem?: (item: HubItem) => void;
   onDeleteHubItem: (id: string) => void;
   onDeleteBooking: (id: string) => void;
+  onDeleteEmail?: (id: string) => void;
   onReorderRoom?: (id: string, direction: 'up' | 'down') => void;
   onReorderHubItem?: (id: string, direction: 'up' | 'down') => void;
 }
@@ -54,8 +56,10 @@ export default function AdminPanel({
   onAddQuestion,
   onDeleteQuestion,
   onAddHubItem,
+  onUpdateHubItem,
   onDeleteHubItem,
   onDeleteBooking,
+  onDeleteEmail,
   onReorderRoom,
   onReorderHubItem
 }: AdminPanelProps) {
@@ -93,37 +97,55 @@ export default function AdminPanel({
     window.print();
   };
 
-  const handleDownloadPdf = () => {
+  const handleDownloadXls = () => {
     if (!selectedInvoiceBooking) return;
-    const element = document.getElementById("print-invoice-sheet");
-    if (!element) return;
-
-    // Build modern file download config
-    const opt = {
-      margin:       12,
-      filename:     `Invoice_${selectedInvoiceBooking.invoiceNumber || 'INV-2026'}.pdf`,
-      image:        { type: 'jpeg', quality: 0.98 },
-      html2canvas:  { scale: 2, useCORS: true, letterRendering: true },
-      jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
-    };
-
-    const runHtml2Pdf = () => {
-      // @ts-ignore
-      if (window.html2pdf) {
-        // @ts-ignore
-        window.html2pdf().from(element).set(opt).save();
-      }
-    };
-
-    if (!(window as any).html2pdf) {
-      const script = document.createElement('script');
-      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
-      script.crossOrigin = 'anonymous';
-      script.onload = runHtml2Pdf;
-      document.head.appendChild(script);
-    } else {
-      runHtml2Pdf();
+    
+    let content = "\uFEFF"; // UTF-8 BOM
+    
+    // Header
+    content += "ფოთის ახალგაზრდული ჰაბი | YOUTH HUB POTI\n";
+    content += `ანგარიშსწორების დოკუმენტი / ინვოისი: ,"${bookingSettings.invoiceTitle || 'ინვოისი მომსახურებაზე'}"\n`;
+    content += `ინვოისი #: ,${selectedInvoiceBooking.invoiceNumber || 'INV-2026-000'}\n`;
+    content += `თარიღი: ,${new Date().toISOString().split('T')[0]}\n\n`;
+    
+    // Vendor info
+    content += "გამცემი ორგანიზაცია:\n";
+    content += `დასახელება: ,"${bookingSettings.invoiceOrgName || 'ფოთის ახალგაზრდული ჰაბი'}"\n`;
+    content += `ელ-ფოსტა: ,${bookingSettings.hubEmail || 'yhub.poti@gmail.com'}\n`;
+    content += `ბანკი: ,"${bookingSettings.invoiceBankName || 'საქართველოს ბანკი'}"\n`;
+    content += `ანგარიშის ნომერი (IBAN): ,${bookingSettings.invoiceIban || 'GE90BG0000000123456789'}\n\n`;
+    
+    // Buyer info
+    content += "დამკვეთი / გადამხდელი:\n";
+    content += `სახელი გვარი: ,"${selectedInvoiceBooking.firstName} ${selectedInvoiceBooking.lastName}"\n`;
+    if (selectedInvoiceBooking.organization) {
+      content += `ორგანიზაცია: ,"${selectedInvoiceBooking.organization.replace(/"/g, '""')}"\n`;
     }
+    content += `ტელეფონი: ,${selectedInvoiceBooking.phone}\n`;
+    content += `ელ-ფოსტა: ,${selectedInvoiceBooking.email}\n\n`;
+    
+    // Table Details
+    content += "მომსახურების აღწერა,ჯავშნის თარიღი,საათები,ტარიფი (₾),ჯამური ღირებულება (₾)\n";
+    
+    const baseHourRate = rooms.find(r => r.id === selectedInvoiceBooking.roomId)?.price || 15;
+    const hoursCount = Math.round(selectedInvoiceBooking.totalPrice / baseHourRate);
+    
+    content += `"${selectedInvoiceBooking.roomName.replace(/"/g, '""')} - დარბაზის/სივრცის დაჯავშნა (დეტალები: ${selectedInvoiceBooking.durationHours.replace(/"/g, '""')}, ${selectedInvoiceBooking.numPeople} კაცი)",${selectedInvoiceBooking.date},${hoursCount},${baseHourRate},${selectedInvoiceBooking.totalPrice}\n\n`;
+    
+    // Totals
+    content += `,,ლიმიტი/ჯამი:,,₾${selectedInvoiceBooking.totalPrice}.00 GEL\n`;
+    content += `,,სტატუსი:,,დადასტურებული\n\n`;
+    content += `შენიშვნა: ,"${bookingSettings.invoiceFooter || 'გიორგი წერეთლის ქუჩა #12, ფოთი, საქართველო. გმადლობთ, რომ სარგებლობთ ახალგაზრდული ჰაბის სივრცით!'}"\n`;
+
+    const blob = new Blob([content], { type: "application/vnd.ms-excel;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", `Invoice_${selectedInvoiceBooking.invoiceNumber || 'INV-2026'}.xls`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   // Google Spreadsheet Modulations
@@ -276,6 +298,8 @@ export default function AdminPanel({
   const [coverUploading, setCoverUploading] = useState(false);
   const [additionalUploading, setAdditionalUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
+  const [editHubItemId, setEditHubItemId] = useState<string | null>(null);
+  const [hubCustomUrl, setHubCustomUrl] = useState('');
 
   // Booking statistics
   const pendingCount = bookings.filter(b => b.status === 'pending').length;
@@ -498,22 +522,46 @@ export default function AdminPanel({
     const reqsArr = hubReqs ? hubReqs.split('\n').map(r => r.trim()).filter(Boolean) : undefined;
     const fallbackImage = hubCover || 'https://images.unsplash.com/photo-1504384308090-c894fdcc538d?auto=format&fit=crop&w=800&q=80';
 
-    onAddHubItem({
-      id: `h${Date.now()}`,
-      category: hubCat,
-      title: hubTitle,
-      summary: hubSummary,
-      content: hubContent,
-      coverImage: fallbackImage,
-      date: new Date().toISOString().split('T')[0],
-      deadline: hubDeadline || undefined,
-      location: hubLocation || undefined,
-      salaryRange: hubSalary || undefined,
-      requirements: reqsArr,
-      additionalImages: hubAdditionalImages.length > 0 ? hubAdditionalImages : undefined,
-      trainingButtonText: hubCat === 'training' ? hubTrainingButtonText.trim() : undefined,
-      trainingButtonLink: hubCat === 'training' ? hubTrainingButtonLink.trim() : undefined
-    });
+    if (editHubItemId) {
+      if (onUpdateHubItem) {
+        onUpdateHubItem({
+          id: editHubItemId,
+          category: hubCat,
+          title: hubTitle,
+          summary: hubSummary,
+          content: hubContent,
+          coverImage: fallbackImage,
+          date: hubItems.find(item => item.id === editHubItemId)?.date || new Date().toISOString().split('T')[0],
+          deadline: hubDeadline || undefined,
+          location: hubLocation || undefined,
+          salaryRange: hubSalary || undefined,
+          requirements: reqsArr,
+          additionalImages: hubAdditionalImages.length > 0 ? hubAdditionalImages : undefined,
+          trainingButtonText: hubCat === 'training' ? hubTrainingButtonText.trim() : undefined,
+          trainingButtonLink: hubCat === 'training' ? hubTrainingButtonLink.trim() : undefined,
+          customUrl: hubCustomUrl.trim() || undefined
+        });
+      }
+      setEditHubItemId(null);
+    } else {
+      onAddHubItem({
+        id: `h${Date.now()}`,
+        category: hubCat,
+        title: hubTitle,
+        summary: hubSummary,
+        content: hubContent,
+        coverImage: fallbackImage,
+        date: new Date().toISOString().split('T')[0],
+        deadline: hubDeadline || undefined,
+        location: hubLocation || undefined,
+        salaryRange: hubSalary || undefined,
+        requirements: reqsArr,
+        additionalImages: hubAdditionalImages.length > 0 ? hubAdditionalImages : undefined,
+        trainingButtonText: hubCat === 'training' ? hubTrainingButtonText.trim() : undefined,
+        trainingButtonLink: hubCat === 'training' ? hubTrainingButtonLink.trim() : undefined,
+        customUrl: hubCustomUrl.trim() || undefined
+      });
+    }
 
     setHubTitle('');
     setHubSummary('');
@@ -525,6 +573,7 @@ export default function AdminPanel({
     setHubReqs('');
     setHubTrainingButtonText('');
     setHubTrainingButtonLink('');
+    setHubCustomUrl('');
     setTrainingButtonValidationError('');
     setHubAdditionalImages([]);
     setShowHubForm(false);
@@ -1305,13 +1354,33 @@ export default function AdminPanel({
                 <div className="flex justify-between items-center border-b border-slate-100 pb-5 mb-6">
                   <div>
                     <h2 className="font-display font-black text-xl text-slate-900">კონტენტის მართვა</h2>
-                    <p className="text-slate-500 text-xs font-sans mt-1">მართეთ ბლოგები, სიახლეები, ტრენინგები, ვაკანსიები და კონკურსები.</p>
+                    <p className="text-slate-500 text-xs font-sans mt-1">მართეთ ბლოგები, სიახლეები, ტრენინგები, სხვადასხვა პოსტები და კონკურსები.</p>
                   </div>
 
                   <button
                     type="button"
                     id="admin-hub-add-btn"
-                    onClick={() => setShowHubForm(!showHubForm)}
+                    onClick={() => {
+                      if (showHubForm) {
+                        setShowHubForm(false);
+                      } else {
+                        setEditHubItemId(null);
+                        setHubTitle('');
+                        setHubSummary('');
+                        setHubContent('');
+                        setHubCover('');
+                        setHubDeadline('');
+                        setHubLocation('');
+                        setHubSalary('');
+                        setHubReqs('');
+                        setHubTrainingButtonText('');
+                        setHubTrainingButtonLink('');
+                        setHubCustomUrl('');
+                        setTrainingButtonValidationError('');
+                        setHubAdditionalImages([]);
+                        setShowHubForm(true);
+                      }
+                    }}
                     className="px-4 py-2 bg-slate-950 hover:bg-slate-800 text-white text-xs font-bold rounded-xl flex items-center space-x-1 shadow-xs cursor-pointer"
                   >
                     <Plus className="h-4 w-4" />
@@ -1322,7 +1391,9 @@ export default function AdminPanel({
                 {/* Hub post drawer form */}
                 {showHubForm && (
                   <form id="admin-hub-form" onSubmit={handleHubSubmit} className="p-6 bg-slate-50 border border-slate-150 rounded-2xl mb-8 space-y-4 animate-fadeIn">
-                    <h3 className="font-display font-bold text-slate-900 text-sm">ახალი პუბლიკაციის რედაქტირება</h3>
+                    <h3 className="font-display font-bold text-slate-900 text-sm">
+                      {editHubItemId ? 'პოსტის რედაქტირება' : 'ახალი პუბლიკაციის შექმნა'}
+                    </h3>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
@@ -1336,7 +1407,7 @@ export default function AdminPanel({
                           <option value="news">სიახლე / ბლოგი</option>
                           <option value="training">ტრენინგები</option>
                           <option value="contest">კონკურსები</option>
-                          <option value="vacancy">ვაკანსიები</option>
+                          <option value="general">სხვადასხვა</option>
                         </select>
                       </div>
 
@@ -1364,6 +1435,18 @@ export default function AdminPanel({
                         placeholder="აღწერეთ პოსტი 1-2 წინადადებით ბარათისთვის..."
                         className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-sans focus:outline-hidden"
                         required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 mb-1">სპეციფიკური ბმული (Custom URL - რეფერალური/გარე ბმული, სურვილისამებრ)</label>
+                      <input
+                        id="admin-hub-custom-url"
+                        type="url"
+                        value={hubCustomUrl}
+                        onChange={(e) => setHubCustomUrl(e.target.value)}
+                        placeholder="მაგ: https://facebook.com/posts/12345 (პოსტზე დაკლიკებისას მომხმარებელი გადამისამართდება ამ ბმულზე)"
+                        className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-sans focus:outline-hidden"
                       />
                     </div>
 
@@ -1610,7 +1693,23 @@ export default function AdminPanel({
                       <button
                         id="admin-hub-cancel"
                         type="button"
-                        onClick={() => setShowHubForm(false)}
+                        onClick={() => {
+                          setShowHubForm(false);
+                          setEditHubItemId(null);
+                          setHubTitle('');
+                          setHubSummary('');
+                          setHubContent('');
+                          setHubCover('');
+                          setHubDeadline('');
+                          setHubLocation('');
+                          setHubSalary('');
+                          setHubReqs('');
+                          setHubTrainingButtonText('');
+                          setHubTrainingButtonLink('');
+                          setHubCustomUrl('');
+                          setTrainingButtonValidationError('');
+                          setHubAdditionalImages([]);
+                        }}
                         className="px-4 py-2 bg-white text-slate-600 border border-slate-200 rounded-lg text-xs font-semibold cursor-pointer"
                       >
                         გაუქმება
@@ -1620,7 +1719,7 @@ export default function AdminPanel({
                         type="submit"
                         className="px-5 py-2 bg-slate-900 text-white rounded-lg text-xs font-bold shadow-xs cursor-pointer"
                       >
-                        შექმნა
+                        {editHubItemId ? 'შენახვა' : 'შექმნა'}
                       </button>
                     </div>
                   </form>
@@ -1641,7 +1740,7 @@ export default function AdminPanel({
                           <div className="flex items-center space-x-2">
                             <span className="font-semibold text-slate-800 text-sm truncate">{item.title}</span>
                             <span className="bg-slate-200/60 text-slate-700 text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md">
-                              {item.category}
+                              {item.category === 'news' ? 'ბლოგი' : item.category === 'training' ? 'ტრენინგი' : item.category === 'contest' ? 'კონკურსი' : item.category === 'general' ? 'სხვადასხვა' : 'ვაკანსია'}
                             </span>
                           </div>
                           <span className="text-[10px] text-slate-400 font-mono mt-0.5 block">გამოქვეყნდა: {item.date}</span>
@@ -1669,6 +1768,33 @@ export default function AdminPanel({
                             </button>
                           </div>
                         )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditHubItemId(item.id);
+                            setHubCat(item.category);
+                            setHubTitle(item.title);
+                            setHubSummary(item.summary);
+                            setHubContent(item.content);
+                            setHubCover(item.coverImage);
+                            setHubDeadline(item.deadline || '');
+                            setHubLocation(item.location || '');
+                            setHubSalary(item.salaryRange || '');
+                            setHubReqs(item.requirements ? item.requirements.join('\n') : '');
+                            setHubTrainingButtonText(item.trainingButtonText || '');
+                            setHubTrainingButtonLink(item.trainingButtonLink || '');
+                            setHubCustomUrl(item.customUrl || '');
+                            setTrainingButtonValidationError('');
+                            setHubAdditionalImages(item.additionalImages || []);
+                            setShowHubForm(true);
+                            // Scroll to form smoothly
+                            document.getElementById('admin-hub-form')?.scrollIntoView({ behavior: 'smooth' });
+                          }}
+                          className="p-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg cursor-pointer transition-colors"
+                          title="რედაქტირება"
+                        >
+                          <Edit className="h-4 w-4" />
+                        </button>
                         <button
                           type="button"
                           id={`admin-hub-delete-${item.id}`}
@@ -1702,10 +1828,22 @@ export default function AdminPanel({
                       <div key={ml.id} className="p-5 bg-slate-900 text-slate-100 rounded-2xl border border-slate-800 space-y-3 font-mono text-xs">
                         {/* Simulation logs header elements wrapper block */}
                         <div className="flex justify-between items-center border-b border-slate-800 pb-2.5">
-                          <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-widest flex items-center">
-                            <Send className="h-3 w-3 mr-1" /> SMTP STATUS: SENT
-                          </span>
-                          <span className="text-[10px] text-slate-400">{ml.timestamp}</span>
+                          <div className="flex items-center space-x-2">
+                            <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-widest flex items-center">
+                              <Send className="h-3 w-3 mr-1" /> SMTP STATUS: SENT
+                            </span>
+                            <span className="text-[10px] text-slate-400">| {ml.timestamp}</span>
+                          </div>
+                          {onDeleteEmail && (
+                            <button
+                              type="button"
+                              onClick={() => onDeleteEmail(ml.id)}
+                              className="p-1 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                              title="ჟურნალიდან წაშლა"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
                         </div>
                         
                         <div>
@@ -2673,11 +2811,11 @@ export default function AdminPanel({
               <div className="mt-8 pt-4 border-t border-slate-150 flex flex-wrap gap-2 justify-end">
                 <button
                   id="invoice-download-pdf-btn"
-                  onClick={handleDownloadPdf}
+                  onClick={handleDownloadXls}
                   className="px-5 py-2.5 bg-brand-500 hover:bg-brand-600 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer flex items-center gap-1.5 transition-colors"
                 >
                   <FileText className="h-4 w-4" />
-                  <span>PDF-ის ჩამოტვირთვა</span>
+                  <span>XLS-ის ჩამოტვირთვა</span>
                 </button>
                 <button
                   id="invoice-print-btn"

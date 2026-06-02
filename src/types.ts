@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-export type HubCategory = 'news' | 'vacancy' | 'contest' | 'training';
+export type HubCategory = 'news' | 'vacancy' | 'contest' | 'training' | 'general';
 
 export interface HubItem {
   id: string;
@@ -21,6 +21,7 @@ export interface HubItem {
   additionalImages?: string[]; // extra gallery images
   trainingButtonText?: string; // custom button text for training category
   trainingButtonLink?: string; // custom button link for training category
+  customUrl?: string; // Option to redirect directly to a custom link instead of details page
 }
 
 export interface MediaItem {

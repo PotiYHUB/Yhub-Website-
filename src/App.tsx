@@ -678,6 +678,16 @@ export default function App() {
     }
   };
 
+  const handleDeleteEmail = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'emails', id));
+      showNotification('წერილი წარმატებით წაიშალა', 'success');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, `emails/${id}`);
+      showNotification('წერილის წაშლა ვერ მოხერხდა', 'error');
+    }
+  };
+
   const handleAddQuestion = async (q: CustomQuestion) => {
     try {
       await setDoc(doc(db, 'customQuestions', q.id), sanitizeForFirestore(q));
@@ -711,6 +721,16 @@ export default function App() {
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, `hubItems/${item.id}`);
       showNotification('პოსტის დამატება ვერ მოხერხდა', 'error');
+    }
+  };
+
+  const handleUpdateHubItem = async (item: HubItem) => {
+    try {
+      await setDoc(doc(db, 'hubItems', item.id), sanitizeForFirestore(item));
+      showNotification('პოსტი წარმატებით განახლდა', 'success');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `hubItems/${item.id}`);
+      showNotification('პოსტის განახლება ვერ მოხერხდა', 'error');
     }
   };
 
@@ -1096,8 +1116,10 @@ export default function App() {
                   onAddQuestion={handleAddQuestion}
                   onDeleteQuestion={handleDeleteQuestion}
                   onAddHubItem={handleAddHubItem}
+                  onUpdateHubItem={handleUpdateHubItem}
                   onDeleteHubItem={handleDeleteHubItem}
                   onDeleteBooking={handleDeleteBooking}
+                  onDeleteEmail={handleDeleteEmail}
                   onReorderRoom={handleReorderRoom}
                   onReorderHubItem={handleReorderHubItem}
                 />

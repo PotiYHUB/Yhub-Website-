@@ -18,10 +18,16 @@ export default function HubItemPage({ hubItems, onNavigateToBooking }: HubItemPa
 
   const item = hubItems.find((p) => p.id === id);
 
-  // Scroll to top on load
+  // Scroll to top on load and check redirect
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'instant' });
-  }, [id]);
+    if (item && item.customUrl) {
+      const url = item.customUrl.startsWith('http://') || item.customUrl.startsWith('https://')
+        ? item.customUrl 
+        : 'https://' + item.customUrl;
+      window.location.replace(url);
+    }
+  }, [id, item]);
 
   if (!item) {
     return (
@@ -68,11 +74,18 @@ export default function HubItemPage({ hubItems, onNavigateToBooking }: HubItemPa
           badgeClass: 'bg-purple-600',
           icon: Trophy
         };
+      case 'general':
+        return {
+          label: 'სხვადასხვა',
+          colorClass: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+          badgeClass: 'bg-emerald-600',
+          icon: HelpCircle
+        };
       default:
         return {
-          label: 'სხვა',
-          colorClass: 'bg-slate-50 text-slate-700 border-slate-200',
-          badgeClass: 'bg-slate-600',
+          label: 'სხვადასხვა',
+          colorClass: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+          badgeClass: 'bg-emerald-600',
           icon: HelpCircle
         };
     }

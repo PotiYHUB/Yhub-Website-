@@ -19,6 +19,17 @@ export default function HubContent({ hubItems, onNavigateToBooking }: HubContent
   const [selectedCategory, setSelectedCategory] = useState<HubCategory | 'all'>('all');
   const [selectedItem, setSelectedItem] = useState<HubItem | null>(null);
 
+  const handleItemClick = (item: HubItem) => {
+    if (item.customUrl) {
+      const url = item.customUrl.startsWith('http://') || item.customUrl.startsWith('https://')
+        ? item.customUrl 
+        : 'https://' + item.customUrl;
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } else {
+      navigate('/news/' + item.id);
+    }
+  };
+
   // Filter items
   const filteredItems = hubItems.filter((item) => {
     const matchesSearch = item.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -52,11 +63,18 @@ export default function HubContent({ hubItems, onNavigateToBooking }: HubContent
           badgeClass: 'bg-purple-600',
           icon: Trophy
         };
+      case 'general':
+        return {
+          label: 'სხვადასხვა',
+          colorClass: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+          badgeClass: 'bg-emerald-600',
+          icon: HelpCircle
+        };
       default:
         return {
-          label: 'სხვა',
-          colorClass: 'bg-slate-50 text-slate-705 border-slate-200',
-          badgeClass: 'bg-slate-600',
+          label: 'სხვადასხვა',
+          colorClass: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+          badgeClass: 'bg-emerald-600',
           icon: HelpCircle
         };
     }
@@ -127,6 +145,17 @@ export default function HubContent({ hubItems, onNavigateToBooking }: HubContent
             >
               კონკურსები
             </button>
+            <button
+              id="filter-general"
+              onClick={() => setSelectedCategory('general')}
+              className={`px-4 py-2 rounded-xl text-sm font-semibold cursor-pointer transition-all ${
+                selectedCategory === 'general'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              სხვადასხვა
+            </button>
           </div>
 
           {/* Search Input */}
@@ -167,7 +196,7 @@ export default function HubContent({ hubItems, onNavigateToBooking }: HubContent
                   className="bg-white rounded-2xl overflow-hidden border border-slate-100 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col group"
                 >
                   {/* Card Cover */}
-                  <div className="relative h-52 overflow-hidden bg-slate-150 cursor-pointer" onClick={() => navigate('/news/' + item.id)}>
+                  <div className="relative h-52 overflow-hidden bg-slate-150 cursor-pointer" onClick={() => handleItemClick(item)}>
                     <img
                       src={item.coverImage}
                       alt={item.title}
@@ -192,7 +221,7 @@ export default function HubContent({ hubItems, onNavigateToBooking }: HubContent
                       </div>
                       <h3 
                         className="font-display font-extrabold text-lg text-slate-900 group-hover:text-brand-600 transition-colors line-clamp-2 leading-snug cursor-pointer"
-                        onClick={() => navigate('/news/' + item.id)}
+                        onClick={() => handleItemClick(item)}
                       >
                         {item.title}
                       </h3>
@@ -216,7 +245,7 @@ export default function HubContent({ hubItems, onNavigateToBooking }: HubContent
                       )}
                       
                       <button
-                        onClick={() => navigate('/news/' + item.id)}
+                        onClick={() => handleItemClick(item)}
                         className="flex items-center space-x-1 text-xs font-bold text-slate-800 hover:text-brand-650 group/btn transition-colors cursor-pointer"
                       >
                         <span>სრულად</span>
