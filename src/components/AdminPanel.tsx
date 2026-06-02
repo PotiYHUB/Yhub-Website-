@@ -15,6 +15,8 @@ import {
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage } from '../firebase';
 import { optimizeImageForWeb, blobToBase64 } from '../utils/imageOptimizer';
+// @ts-ignore
+import logoImg from '../assets/images/small-logo.png';
 
 interface AdminPanelProps {
   rooms: Room[];
@@ -1898,6 +1900,13 @@ export default function AdminPanel({
                   const invoiceIban = formData.get('invoiceIban') as string;
                   const invoiceFooter = formData.get('invoiceFooter') as string;
 
+                  const invoiceShowLogo = formData.get('invoiceShowLogo') === 'on';
+                  const invoiceShowStamp = formData.get('invoiceShowStamp') === 'on';
+                  const invoiceStampText = formData.get('invoiceStampText') as string;
+                  const invoiceStampDept = formData.get('invoiceStampDept') as string;
+                  const invoiceStampCircle = formData.get('invoiceStampCircle') as string;
+                  const invoiceStampColor = formData.get('invoiceStampColor') as string;
+
                   const footerTextUnderLogo = formData.get('footerTextUnderLogo') as string;
                   const stat1Value = formData.get('stat1Value') as string;
                   const stat1Label = formData.get('stat1Label') as string;
@@ -1919,6 +1928,12 @@ export default function AdminPanel({
                     invoiceBankName,
                     invoiceIban,
                     invoiceFooter,
+                    invoiceShowLogo,
+                    invoiceShowStamp,
+                    invoiceStampText,
+                    invoiceStampDept,
+                    invoiceStampCircle,
+                    invoiceStampColor,
                     footerTextUnderLogo,
                     stat1Value,
                     stat1Label,
@@ -2053,6 +2068,81 @@ export default function AdminPanel({
                         className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-sans focus:outline-hidden resize-none"
                         required
                       />
+                    </div>
+
+                    {/* Invoice Logo & Seal Customizer Subsection */}
+                    <div className="mt-4 pt-4 border-t border-dashed border-slate-200">
+                      <h4 className="text-[11px] font-black uppercase text-slate-400 tracking-wider mb-3">ინვოისის ბეჭედი და ლოგო (Seal & Logo Settings)</h4>
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="flex items-center space-x-3 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                          <input
+                            type="checkbox"
+                            id="invoiceShowLogo"
+                            name="invoiceShowLogo"
+                            defaultChecked={bookingSettings?.invoiceShowLogo ?? true}
+                            className="w-4 h-4 text-brand-600 border-slate-300 rounded-sm focus:ring-brand-500 cursor-pointer"
+                          />
+                          <label htmlFor="invoiceShowLogo" className="text-xs font-bold text-slate-700 cursor-pointer">საიტის ლოგოს ჩვენება ინვოისზე</label>
+                        </div>
+
+                        <div className="flex items-center space-x-3 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                          <input
+                            type="checkbox"
+                            id="invoiceShowStamp"
+                            name="invoiceShowStamp"
+                            defaultChecked={bookingSettings?.invoiceShowStamp ?? true}
+                            className="w-4 h-4 text-brand-600 border-slate-300 rounded-sm focus:ring-brand-500 cursor-pointer"
+                          />
+                          <label htmlFor="invoiceShowStamp" className="text-xs font-bold text-slate-700 cursor-pointer">ციფრული ბეჭდის (Approved Stamp) ჩართვა</label>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-500 mb-1">ბეჭდის სტატუსის ტექსტი (ცენტრში)</label>
+                          <input
+                            type="text"
+                            name="invoiceStampText"
+                            defaultValue={bookingSettings?.invoiceStampText ?? 'APPROVED'}
+                            className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-sans focus:outline-hidden"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-500 mb-1">დეპარტამენტი/სუბტექსტი</label>
+                          <input
+                            type="text"
+                            name="invoiceStampDept"
+                            defaultValue={bookingSettings?.invoiceStampDept ?? 'SERVICES'}
+                            className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-sans focus:outline-hidden"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-500 mb-1">ბეჭდის ირგვლივ ტექსტი</label>
+                          <input
+                            type="text"
+                            name="invoiceStampCircle"
+                            defaultValue={bookingSettings?.invoiceStampCircle ?? '• POTI YOUTH HUB • OFFICIAL APPROVED •'}
+                            className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-sans focus:outline-hidden"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-500 mb-1">ბეჭდის ფერი</label>
+                          <select
+                            name="invoiceStampColor"
+                            defaultValue={bookingSettings?.invoiceStampColor ?? 'emerald'}
+                            className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:outline-hidden cursor-pointer"
+                          >
+                            <option value="emerald">მწვანე (Emerald)</option>
+                            <option value="blue">ლურჯი (Blue)</option>
+                            <option value="red">წითელი (Red)</option>
+                            <option value="purple">იასამნისფერი (Purple)</option>
+                          </select>
+                        </div>
+                      </div>
                     </div>
                   </div>
 
@@ -2696,11 +2786,49 @@ export default function AdminPanel({
           <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-md flex justify-center items-center p-4 overflow-y-auto">
             <style dangerouslySetInnerHTML={{ __html: `
               @media print {
+                html, body {
+                  height: auto !important;
+                  overflow: visible !important;
+                  margin: 0 !important;
+                  padding: 0 !important;
+                  background: white !important;
+                }
                 body * {
                   visibility: hidden !important;
                 }
                 #print-invoice-sheet, #print-invoice-sheet * {
                   visibility: visible !important;
+                }
+                #invoice-modal-close, #invoice-back-btn, #invoice-print-btn, #invoice-download-xls-btn, p.text-right {
+                  display: none !important;
+                  visibility: hidden !important;
+                }
+                .fixed.inset-0.z-50 {
+                   position: absolute !important;
+                   left: 0 !important;
+                   top: 0 !important;
+                   width: 100% !important;
+                   height: auto !important;
+                   overflow: visible !important;
+                   background: transparent !important;
+                   backdrop-filter: none !important;
+                   padding: 0 !important;
+                   margin: 0 !important;
+                   display: block !important;
+                   box-shadow: none !important;
+                }
+                .fixed.inset-0.z-50 > div {
+                   border: none !important;
+                   box-shadow: none !important;
+                   padding: 0 !important;
+                   margin: 0 !important;
+                   border-radius: 0 !important;
+                   background: white !important;
+                   width: 100% !important;
+                   max-width: 100% !important;
+                   height: auto !important;
+                   display: block !important;
+                   overflow: visible !important;
                 }
                 #print-invoice-sheet {
                   position: absolute !important;
@@ -2709,10 +2837,11 @@ export default function AdminPanel({
                   width: 100% !important;
                   max-width: 100% !important;
                   margin: 0 !important;
-                  padding: 8mm !important;
+                  padding: 10mm 15mm !important;
                   box-shadow: none !important;
                   border: none !important;
                   background: white !important;
+                  box-sizing: border-box !important;
                 }
                 * {
                   -webkit-print-color-adjust: exact !important;
@@ -2736,14 +2865,19 @@ export default function AdminPanel({
                 
                 {/* Visual Header */}
                 <div className="flex justify-between items-start border-b border-slate-150 pb-6">
-                  <div>
-                    <h3 className="font-display font-black text-xl text-slate-900 tracking-tight">
-                      {bookingSettings.invoiceTitle || 'ინვოისი მომსახურებაზე'}
-                    </h3>
-                    <p className="text-rose-600 font-mono text-xs font-semibold mt-1">
-                      ინვოისი #: {selectedInvoiceBooking.invoiceNumber || 'INV-2026-000'}
-                    </p>
-                    <p className="text-slate-400 text-[10px] mt-0.5">თარიღი: {new Date().toISOString().split('T')[0]}</p>
+                  <div className="flex items-center">
+                    {(bookingSettings.invoiceShowLogo !== false) && (
+                      <img src={logoImg} alt="Poti Youth Hub Logo" className="h-11 w-11 object-contain mr-3 sm:mr-4 select-none" referrerPolicy="no-referrer" />
+                    )}
+                    <div>
+                      <h3 className="font-display font-black text-xl text-slate-900 tracking-tight">
+                        {bookingSettings.invoiceTitle || 'ინვოისი მომსახურებაზე'}
+                      </h3>
+                      <p className="text-rose-600 font-mono text-xs font-semibold mt-1">
+                        ინვოისი #: {selectedInvoiceBooking.invoiceNumber || 'INV-2026-000'}
+                      </p>
+                      <p className="text-slate-400 text-[10px] mt-0.5">თარიღი: {new Date().toISOString().split('T')[0]}</p>
+                    </div>
                   </div>
 
                   <div className="text-right">
@@ -2810,13 +2944,37 @@ export default function AdminPanel({
 
                 {/* Sub Total calculations and stamp mockup */}
                 <div className="flex justify-between items-center bg-slate-50 p-5 rounded-2xl border border-slate-100">
-                  {/* Decorative Mock Stamp Circle */}
-                  <div className="hidden sm:flex items-center space-x-2">
-                    <div className="w-12 h-12 rounded-full border-2 border-dashed border-emerald-500/40 text-emerald-600/55 flex items-center justify-center font-display font-black text-[9px] uppercase tracking-widest leading-none rotate-12 text-center p-1">
-                      Poti Hub Approved
+                  {/* Configurative Digital Stamp Frame */}
+                  {(bookingSettings.invoiceShowStamp !== false) ? (
+                    <div className="flex items-center space-x-3 select-none">
+                      <div className={`relative w-20 h-20 rounded-full border-4 border-double flex flex-col items-center justify-center text-center p-1 select-none rotate-6 transition-transform ${
+                        bookingSettings.invoiceStampColor === 'blue' ? 'border-blue-600/70 text-blue-700/80 bg-blue-50/10' :
+                        bookingSettings.invoiceStampColor === 'red' ? 'border-rose-600/70 text-rose-700/80 bg-rose-50/10' :
+                        bookingSettings.invoiceStampColor === 'purple' ? 'border-purple-600/70 text-purple-700/80 bg-purple-50/10' :
+                        'border-emerald-600/70 text-emerald-700/80 bg-emerald-50/10'
+                      }`}
+                      style={{ fontFamily: 'monospace' }}
+                      >
+                        {/* Circular Outer text representation */}
+                        <div className="absolute inset-0.5 text-[5px] uppercase font-bold flex items-center justify-center text-center p-0.5" style={{ letterSpacing: '0.2px' }}>
+                          <span className="w-full truncate">{bookingSettings.invoiceStampCircle || '• OFFICIAL SEAL •'}</span>
+                        </div>
+                        {/* Inner central stamp values */}
+                        <div className="z-10 py-1 bg-white border-y border-dashed border-current px-1.5 leading-none">
+                          <span className="block font-display font-black text-[9px] uppercase tracking-wider">{bookingSettings.invoiceStampText || 'APPROVED'}</span>
+                          <span className="block text-[6px] opacity-75 font-bold uppercase tracking-widest mt-0.5">{bookingSettings.invoiceStampDept || 'SERVICES'}</span>
+                        </div>
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-[10px] text-slate-800 font-bold font-sans">ელექტრონული ბეჭედი</span>
+                        <span className="text-[8px] text-slate-400 font-sans">Poti Youth Hub Seal</span>
+                      </div>
                     </div>
-                    <span className="text-[10px] text-slate-400 font-sans">ელექტრონული დადასტურება</span>
-                  </div>
+                  ) : (
+                    <div className="text-[10px] text-slate-400 italic">
+                      ელექტრონული ხელმოწერა საჭირო არ არის
+                    </div>
+                  )}
 
                   <div className="text-right ml-auto space-y-1">
                     <div className="text-xs text-slate-450 font-semibold uppercase">გადასახდელი თანხა</div>
