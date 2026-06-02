@@ -10,7 +10,7 @@ import {
   Check, X, Plus, Trash2, Edit, Calendar, Users, DollarSign, Mail, 
   Clock, ShieldAlert, FileText, LayoutList, ListPlus, Send, MessageSquarePlus, Sparkles, HelpCircle, Settings as SettingsIcon, Percent,
   ArrowUp, ArrowDown, Table, Download, Globe, Eye, Share2, Search,
-  Upload, Image as ImageIcon, Loader2
+  Upload, Image as ImageIcon, Loader2, Printer, FileSpreadsheet
 } from 'lucide-react';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage } from '../firebase';
@@ -2694,6 +2694,32 @@ export default function AdminPanel({
         {/* Dynamic PDF-Invoice Simulation overlay rendering modal */}
         {selectedInvoiceBooking && (
           <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-md flex justify-center items-center p-4 overflow-y-auto">
+            <style dangerouslySetInnerHTML={{ __html: `
+              @media print {
+                body * {
+                  visibility: hidden !important;
+                }
+                #print-invoice-sheet, #print-invoice-sheet * {
+                  visibility: visible !important;
+                }
+                #print-invoice-sheet {
+                  position: absolute !important;
+                  left: 0 !important;
+                  top: 0 !important;
+                  width: 100% !important;
+                  max-width: 100% !important;
+                  margin: 0 !important;
+                  padding: 8mm !important;
+                  box-shadow: none !important;
+                  border: none !important;
+                  background: white !important;
+                }
+                * {
+                  -webkit-print-color-adjust: exact !important;
+                  print-color-adjust: exact !important;
+                }
+              }
+            `}} />
             <div className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl relative overflow-hidden my-8 p-8 sm:p-10 text-slate-800 leading-snug">
               
               {/* Close invoice modal button */}
@@ -2808,30 +2834,35 @@ export default function AdminPanel({
               </div>
 
               {/* Print action and back buttons */}
-              <div className="mt-8 pt-4 border-t border-slate-150 flex flex-wrap gap-2 justify-end">
-                <button
-                  id="invoice-download-pdf-btn"
-                  onClick={handleDownloadXls}
-                  className="px-5 py-2.5 bg-brand-500 hover:bg-brand-600 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer flex items-center gap-1.5 transition-colors"
-                >
-                  <FileText className="h-4 w-4" />
-                  <span>XLS-ის ჩამოტვირთვა</span>
-                </button>
-                <button
-                  id="invoice-print-btn"
-                  onClick={handlePrintInvoice}
-                  className="px-5 py-2.5 bg-slate-950 hover:bg-slate-800 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer flex items-center gap-1.5 transition-colors"
-                >
-                  <Send className="h-4 w-4" />
-                  <span>ბეჭდვა</span>
-                </button>
-                <button
-                  id="invoice-back-btn"
-                  onClick={() => setSelectedInvoiceBooking(null)}
-                  className="px-4 py-2.5 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-xl text-xs font-semibold cursor-pointer"
-                >
-                  უკან დაბრუნება
-                </button>
+              <div className="mt-8 pt-4 border-t border-slate-150 flex flex-col items-end space-y-2">
+                <div className="flex flex-wrap gap-2 justify-end w-full">
+                  <button
+                    id="invoice-download-xls-btn"
+                    onClick={handleDownloadXls}
+                    className="p-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl border border-emerald-200 cursor-pointer transition-colors flex items-center justify-center shadow-xs"
+                    title="XLS-ის ჩამოტვირთვა (Excel)"
+                  >
+                    <FileSpreadsheet className="h-4 w-4" />
+                  </button>
+                  <button
+                    id="invoice-print-btn"
+                    onClick={handlePrintInvoice}
+                    className="px-5 py-2.5 bg-brand-500 hover:bg-brand-600 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer flex items-center gap-1.5 transition-colors"
+                  >
+                    <Printer className="h-4 w-4" />
+                    <span>ბეჭდვა / PDF შენახვა</span>
+                  </button>
+                  <button
+                    id="invoice-back-btn"
+                    onClick={() => setSelectedInvoiceBooking(null)}
+                    className="px-4 py-2.5 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-xl text-xs font-semibold cursor-pointer"
+                  >
+                    უკან დაბრუნება
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-400 text-right w-full">
+                  💡 რჩევა: PDF ფაილის ჩამოსატვირთად აირჩიეთ <b>"Save as PDF" (PDF-ად შენახვა)</b> ბეჭდვის ფანჯარაში
+                </p>
               </div>
 
             </div>
