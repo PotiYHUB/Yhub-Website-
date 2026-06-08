@@ -901,15 +901,18 @@ export default function App() {
             <div className="animate-fadeIn">
               {/* Maritime Sea-Themed Hero Banner */}
               <section className="relative bg-slate-900 py-24 sm:py-32 overflow-hidden text-white leading-snug">
-                <div className="absolute inset-0 z-0 opacity-50">
+                <div className="absolute inset-0 z-0 opacity-100">
                   <img 
-                    src={heroBg} 
+                    src={bookingSettings.homepageBannerUrl || heroBg} 
                     alt="Background" 
                     referrerPolicy="no-referrer"
                     className="w-full h-full object-cover"
                   />
                 </div>
-                <div className="absolute inset-0 bg-gradient-to-r from-slate-950 via-slate-900/90 to-brand-900/60 z-10"></div>
+                <div 
+                  className="absolute inset-0 bg-gradient-to-r from-slate-950 via-slate-900/90 to-brand-900/60 z-10"
+                  style={{ opacity: (bookingSettings.homepageBannerOverlayOpacity !== undefined) ? (bookingSettings.homepageBannerOverlayOpacity / 100) : 0.5 }}
+                />
                 
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-20">
                   <div className="max-w-3xl">
@@ -1023,15 +1026,18 @@ export default function App() {
             <div className="animate-fadeIn">
               {/* Custom header for Booking page */}
               <section className="relative bg-slate-900 py-16 sm:py-20 overflow-hidden text-white leading-snug">
-                <div className="absolute inset-0 z-0 opacity-45">
+                <div className="absolute inset-0 z-0 opacity-100">
                   <img 
-                    src={heroBg} 
+                    src={bookingSettings.homepageBannerUrl || heroBg} 
                     alt="Background" 
                     referrerPolicy="no-referrer"
                     className="w-full h-full object-cover"
                   />
                 </div>
-                <div className="absolute inset-0 bg-gradient-to-r from-slate-950 via-slate-900/95 to-brand-950/70 z-10"></div>
+                <div 
+                  className="absolute inset-0 bg-gradient-to-r from-slate-950 via-slate-900/95 to-brand-950/70 z-10"
+                  style={{ opacity: (bookingSettings.homepageBannerOverlayOpacity !== undefined) ? (bookingSettings.homepageBannerOverlayOpacity / 100) : 0.5 }}
+                />
                 
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-20">
                   <div className="max-w-3xl">
@@ -1061,15 +1067,18 @@ export default function App() {
             <div className="animate-fadeIn">
               {/* Custom header for Gallery page */}
               <section className="relative bg-slate-900 py-16 sm:py-20 overflow-hidden text-white leading-snug">
-                <div className="absolute inset-0 z-0 opacity-45">
+                <div className="absolute inset-0 z-0 opacity-100">
                   <img 
-                    src={heroBg} 
+                    src={bookingSettings.homepageBannerUrl || heroBg} 
                     alt="Background" 
                     referrerPolicy="no-referrer"
                     className="w-full h-full object-cover"
                   />
                 </div>
-                <div className="absolute inset-0 bg-gradient-to-r from-slate-950 via-slate-900/95 to-brand-950/70 z-10"></div>
+                <div 
+                  className="absolute inset-0 bg-gradient-to-r from-slate-950 via-slate-900/95 to-brand-950/70 z-10"
+                  style={{ opacity: (bookingSettings.homepageBannerOverlayOpacity !== undefined) ? (bookingSettings.homepageBannerOverlayOpacity / 100) : 0.5 }}
+                />
                 
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-20">
                   <div className="max-w-3xl">

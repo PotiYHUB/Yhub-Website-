@@ -95,6 +95,8 @@ export default function AdminPanel({
       setSeoImage(bookingSettings.seoImage ?? 'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?auto=format&fit=crop&w=1200&h=630&q=80');
       setSeoGoogleAnalytics(bookingSettings.seoGoogleAnalytics ?? 'G-XXXXXXXXXX');
       setSeoRobotIndex(bookingSettings.seoRobotIndex ?? true);
+      setSettingsBannerUrl(bookingSettings.homepageBannerUrl ?? '');
+      setSettingsBannerOverlayOpacity(bookingSettings.homepageBannerOverlayOpacity ?? 50);
       setHasInitializedSeo(true);
     }
   }, [bookingSettings, hasInitializedSeo]);
@@ -315,6 +317,66 @@ export default function AdminPanel({
   const [uploadError, setUploadError] = useState('');
   const [editHubItemId, setEditHubItemId] = useState<string | null>(null);
   const [hubCustomUrl, setHubCustomUrl] = useState('');
+  const [hubDate, setHubDate] = useState('');
+
+  // Homepage top banner and opacity slider states synced to settings
+  const [settingsBannerUrl, setSettingsBannerUrl] = useState('');
+  const [settingsBannerOverlayOpacity, setSettingsBannerOverlayOpacity] = useState(50);
+  const [settingsBannerUploading, setSettingsBannerUploading] = useState(false);
+
+  // Helper to format any date string into local datetime-local compatible format (YYYY-MM-DDTHH:MM)
+  const formatToLocalDateTimeString = (dateStr: string): string => {
+    if (!dateStr) return '';
+    if (dateStr.includes('T')) {
+      return dateStr.substring(0, 16);
+    }
+    if (dateStr.includes(' ')) {
+      return dateStr.replace(' ', 'T').substring(0, 16);
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      return `${dateStr}T12:00`;
+    }
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) {
+        const now = new Date();
+        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}T12:00`;
+      }
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      const hours = String(d.getHours()).padStart(2, '0');
+      const minutes = String(d.getMinutes()).padStart(2, '0');
+      return `${year}-${month}-${day}T${hours}:${minutes}`;
+    } catch {
+      return '';
+    }
+  };
+
+  const getCurrentLocalDateTimeString = (): string => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const hours = String(d.getHours()).padStart(2, '0');
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+  };
+
+  const handleSettingsBannerUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setSettingsBannerUploading(true);
+    try {
+      const url = await processAndUploadImage(file);
+      setSettingsBannerUrl(url);
+    } catch (err: any) {
+      alert('ფოტოს ატვირთვა ვერ მოხერხდა: ' + (err.message || String(err)));
+    } finally {
+      setSettingsBannerUploading(false);
+    }
+  };
 
   // CMS Gallery / Media Item States
   const [showMediaForm, setShowMediaForm] = useState(false);
@@ -660,7 +722,7 @@ export default function AdminPanel({
           summary: hubSummary,
           content: hubContent,
           coverImage: fallbackImage,
-          date: hubItems.find(item => item.id === editHubItemId)?.date || new Date().toISOString().split('T')[0],
+          date: hubDate ? hubDate.replace('T', ' ') : (hubItems.find(item => item.id === editHubItemId)?.date || new Date().toISOString().split('T')[0]),
           deadline: hubDeadline || undefined,
           location: hubLocation || undefined,
           salaryRange: hubSalary || undefined,
@@ -680,7 +742,7 @@ export default function AdminPanel({
         summary: hubSummary,
         content: hubContent,
         coverImage: fallbackImage,
-        date: new Date().toISOString().split('T')[0],
+        date: hubDate ? hubDate.replace('T', ' ') : new Date().toISOString().split('T')[0],
         deadline: hubDeadline || undefined,
         location: hubLocation || undefined,
         salaryRange: hubSalary || undefined,
@@ -703,6 +765,7 @@ export default function AdminPanel({
     setHubTrainingButtonText('');
     setHubTrainingButtonLink('');
     setHubCustomUrl('');
+    setHubDate('');
     setTrainingButtonValidationError('');
     setHubAdditionalImages([]);
     setShowHubForm(false);
@@ -1625,6 +1688,7 @@ export default function AdminPanel({
                         setHubTrainingButtonText('');
                         setHubTrainingButtonLink('');
                         setHubCustomUrl('');
+                        setHubDate(getCurrentLocalDateTimeString());
                         setTrainingButtonValidationError('');
                         setHubAdditionalImages([]);
                         setShowHubForm(true);
@@ -1644,7 +1708,7 @@ export default function AdminPanel({
                       {editHubItemId ? 'პოსტის რედაქტირება' : 'ახალი პუბლიკაციის შექმნა'}
                     </h3>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div>
                         <label className="block text-xs font-bold text-slate-500 mb-1">კატეგორია *</label>
                         <select
@@ -1669,6 +1733,18 @@ export default function AdminPanel({
                           onChange={(e) => setHubTitle(e.target.value)}
                           placeholder="შეიყვანეთ გამორჩეული სათაური..."
                           className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-sans focus:outline-hidden"
+                          required
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 mb-1">გამოქვეყნების დრო/თარიღი *</label>
+                        <input
+                          id="admin-hub-date"
+                          type="datetime-local"
+                          value={hubDate}
+                          onChange={(e) => setHubDate(e.target.value)}
+                          className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-sans focus:outline-hidden cursor-pointer font-semibold text-slate-700"
                           required
                         />
                       </div>
@@ -1956,6 +2032,7 @@ export default function AdminPanel({
                           setHubTrainingButtonText('');
                           setHubTrainingButtonLink('');
                           setHubCustomUrl('');
+                          setHubDate('');
                           setTrainingButtonValidationError('');
                           setHubAdditionalImages([]);
                         }}
@@ -2033,6 +2110,7 @@ export default function AdminPanel({
                             setHubTrainingButtonText(item.trainingButtonText || '');
                             setHubTrainingButtonLink(item.trainingButtonLink || '');
                             setHubCustomUrl(item.customUrl || '');
+                            setHubDate(formatToLocalDateTimeString(item.date));
                             setTrainingButtonValidationError('');
                             setHubAdditionalImages(item.additionalImages || []);
                             setShowHubForm(true);
@@ -2295,25 +2373,26 @@ export default function AdminPanel({
                       .filter(item => mediaFilter === 'all' || item.type === mediaFilter)
                       .map((item) => (
                         <div key={item.id} className="group bg-slate-50 border border-slate-200/60 rounded-2xl overflow-hidden shadow-xs flex flex-col justify-between hover:shadow-md transition-all">
-                          {/* Preview Aspect */}
-                          <div className="relative aspect-video bg-slate-900 border-b border-slate-150 overflow-hidden">
-                            {item.type === 'video' ? (
-                              <div className="absolute inset-0 flex flex-col justify-center items-center bg-slate-950/40 text-white p-4">
-                                <div className="p-3 bg-red-600 rounded-full mb-2">
-                                  <Play className="h-5 w-5 fill-white text-white" />
-                                </div>
-                                <span className="font-sans text-[10px] font-bold tracking-widest uppercase text-white bg-black/60 px-2 py-0.5 rounded-md">
-                                  ვიდეო მასალა
-                                </span>
+                              {/* Preview Aspect */}
+                              <div className="relative aspect-video bg-slate-900 border-b border-slate-150 overflow-hidden">
+                                {item.type === 'video' ? (
+                                  <div className="absolute inset-0 flex flex-col justify-center items-center bg-slate-950/40 text-white p-4">
+                                    <div className="p-3 bg-red-600 rounded-full mb-2">
+                                      <Play className="h-5 w-5 fill-white text-white" />
+                                    </div>
+                                    <span className="font-sans text-[10px] font-bold tracking-widest uppercase text-white bg-black/60 px-2 py-0.5 rounded-md">
+                                      ვიდეო მასალა
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <img
+                                    src={item.url}
+                                    alt={item.caption}
+                                    referrerPolicy="no-referrer"
+                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                  />
+                                )}
                               </div>
-                            ) : (
-                              <img
-                                src={item.url}
-                                alt={item.caption}
-                                referrerPolicy="no-referrer"
-                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                              />
-                            )}
                             
                             {/* Meta flags */}
                             <div className="absolute top-2.5 left-2.5 bg-slate-900/90 text-white text-[10px] font-bold font-mono px-2 py-1 rounded-md">
@@ -2325,7 +2404,6 @@ export default function AdminPanel({
                                 რიგი: {item.order}
                               </div>
                             )}
-                          </div>
 
                           {/* Body Caption Info */}
                           <div className="p-4 flex-1 flex flex-col justify-between">
@@ -2496,7 +2574,9 @@ export default function AdminPanel({
                     seoKeywords,
                     seoImage,
                     seoGoogleAnalytics,
-                    seoRobotIndex
+                    seoRobotIndex,
+                    homepageBannerUrl: settingsBannerUrl,
+                    homepageBannerOverlayOpacity: Number(settingsBannerOverlayOpacity)
                   });
                 }} className="space-y-6">
                   
@@ -2810,6 +2890,114 @@ export default function AdminPanel({
                             className="w-full p-2 bg-white border border-slate-200 rounded-lg text-xs font-sans"
                             required
                           />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Homepage Top Banner Customizer */}
+                    <div className="mt-6 pt-5 border-t border-dashed border-slate-200/80 space-y-4 font-sans">
+                      <div className="flex items-center space-x-2">
+                        <span className="w-1.5 h-3 bg-brand-500 rounded-xs"></span>
+                        <h4 className="text-xs font-black uppercase text-slate-800 tracking-wider">მთავარი გვერდის ბანერის პარამეტრები (Top Banner & Overlay Balance)</h4>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                        {/* Banner Image Uploader / Input */}
+                        <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3.5">
+                          <div>
+                            <label className="block text-xs font-bold text-slate-700">ბანერის უკანა ფონი (Banner Image)</label>
+                            <p className="text-[10px] text-slate-400 mt-0.5">ატვირთეთ ფოტო ან ჩაწერეთ პირდაპირი ლინკი.</p>
+                          </div>
+                          
+                          <div className="flex items-center space-x-3.5">
+                            <div className="relative w-32 h-18 rounded-xl bg-slate-200 border border-slate-200 overflow-hidden flex items-center justify-center shrink-0 shadow-inner">
+                              {settingsBannerUrl ? (
+                                <img
+                                  src={settingsBannerUrl}
+                                  alt="Banner preview"
+                                  className="w-full h-full object-cover animate-fadeIn"
+                                  referrerPolicy="no-referrer"
+                                />
+                              ) : (
+                                <div className="text-center text-slate-400">
+                                  <ImageIcon className="h-5 w-5 mx-auto opacity-60" />
+                                  <span className="text-[8px] block leading-none mt-1 text-slate-400 font-bold">Standard BG</span>
+                                </div>
+                              )}
+                              {settingsBannerUploading && (
+                                <div className="absolute inset-0 bg-white/75 flex items-center justify-center">
+                                  <Loader2 className="h-4 w-4 text-slate-850 animate-spin" />
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="flex-1 space-y-1.5">
+                              <label className="inline-flex items-center px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold rounded-lg cursor-pointer transition-colors shadow-2xs">
+                                <Upload className="h-3 w-3 mr-1" />
+                                <span>სურათის ატვირთვა</span>
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  onChange={handleSettingsBannerUpload}
+                                  className="hidden"
+                                />
+                              </label>
+                              <span className="block text-[10px] text-slate-400 font-sans font-medium">ან გამოიყენეთ გარე ბმული:</span>
+                            </div>
+                          </div>
+
+                          <input
+                            type="text"
+                            value={settingsBannerUrl}
+                            onChange={(e) => setSettingsBannerUrl(e.target.value)}
+                            placeholder="შეიყვანეთ სურათის ლინკი (https://...)"
+                            className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-mono focus:outline-hidden shadow-2xs"
+                          />
+                        </div>
+
+                        {/* Overlay opacity controller */}
+                        <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-4 flex flex-col justify-between">
+                          <div>
+                            <label className="block text-xs font-bold text-slate-700">ბანერის სიბნელე / Overlay ბალანსი</label>
+                            <p className="text-[10px] text-slate-400 mt-0.5">აკონტროლეთ მუქი ფენის პროცენტულობა ტექსტის უკეთესი კითხვადობისთვის.</p>
+                          </div>
+
+                          <div className="space-y-2.5">
+                            <div className="flex justify-between text-[10px] font-bold font-mono text-slate-500">
+                              <span>0% (ნათელი ბანერი)</span>
+                              <span className="text-brand-650 font-black text-xs">{settingsBannerOverlayOpacity}%</span>
+                              <span>100% (სრული სიბნელე)</span>
+                            </div>
+                            
+                            <input
+                              type="range"
+                              min="0"
+                              max="100"
+                              value={settingsBannerOverlayOpacity}
+                              onChange={(e) => setSettingsBannerOverlayOpacity(Number(e.target.value))}
+                              className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-slate-900 focus:outline-hidden"
+                            />
+                            
+                            {/* Visual simulation preview of the text contrast */}
+                            <div className="relative h-14 rounded-xl overflow-hidden bg-slate-900 flex items-center justify-center border border-slate-200/80 shadow-xs">
+                              {settingsBannerUrl ? (
+                                <img 
+                                  src={settingsBannerUrl} 
+                                  className="absolute inset-0 w-full h-full object-cover" 
+                                  referrerPolicy="no-referrer"
+                                  alt="Contrast preview background" 
+                                />
+                              ) : null}
+                              <div 
+                                className="absolute inset-0 bg-slate-950" 
+                                style={{ opacity: settingsBannerOverlayOpacity / 100 }}
+                              />
+                              <div className="relative z-10 text-center px-3">
+                                <span className="text-xs text-white font-bold tracking-tight block">კითხვადობის ეფექტის ტესტი (Contrast Test)</span>
+                                <span className="text-[9px] text-slate-300 block font-light mt-0.5">Poti Youth Hub</span>
+                              </div>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </div>
