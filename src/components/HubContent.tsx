@@ -217,7 +217,7 @@ export default function HubContent({ hubItems, onNavigateToBooking }: HubContent
                     <div>
                       <div className="flex items-center space-x-1.5 text-xs text-slate-400 font-semibold mb-2.5">
                         <Calendar className="h-3.5 w-3.5" />
-                        <span>{item.date}</span>
+                        <span>{item.date ? item.date.substring(0, 10) : ''}</span>
                       </div>
                       <h3 
                         className="font-display font-extrabold text-lg text-slate-900 group-hover:text-brand-600 transition-colors line-clamp-2 leading-snug cursor-pointer"

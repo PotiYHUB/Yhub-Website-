@@ -25,7 +25,7 @@ import {
 } from './mockData';
 
 import { 
-  Compass, Users, Calendar, Award, MapPin, Mail, Phone, Anchor, ArrowDown, HelpCircle, ShieldCheck, ShieldAlert, X, ArrowUp
+  Compass, Users, Calendar, Award, MapPin, Mail, Phone, Anchor, ArrowDown, HelpCircle, ShieldCheck, ShieldAlert, X, ArrowUp, MessageCircle, Facebook
 } from 'lucide-react';
 
 // Live Firestore integration imports
@@ -111,6 +111,10 @@ export default function App() {
     hubEmail: 'yhub.poti@gmail.com',
     hubPhone: '+995 599 123 456',
     hubWorkHours: 'ორშაბათი - პარასკევი: 10:00 - 20:00',
+    chatFacebook: 'https://facebook.com/PotiYouthHub/',
+    chatWhatsapp: 'https://wa.me/995599123456',
+    chatEmail: 'yhub.poti@gmail.com',
+    chatPhone: '+995599123456',
     invoiceTitle: 'ინვოისი მომსახურებაზე',
     invoiceOrgName: 'ფოთის ახალგაზრდული ჰაბი',
     invoiceBankName: 'საქართველოს ბანკი',
@@ -135,6 +139,9 @@ export default function App() {
 
   // Tracking individual visitors' guest bookings submissions globally
   const [submittedId, setSubmittedId] = useState<string | null>(null);
+
+  // Floating chat toggle state
+  const [chatOpen, setChatOpen] = useState(false);
 
   // Emails tracking state
   const [emails, setEmails] = useState<any[]>([]);
@@ -1324,6 +1331,95 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Floating Chat Widget with expandable contact options */}
+      <div id="floating-chat-container" className="fixed bottom-6 right-6 z-55 flex flex-col items-end space-y-3">
+        {chatOpen && (
+          <div className="flex flex-col items-end space-y-2 mb-2 animate-fadeIn">
+            {/* Facebook Link Option */}
+            <a
+              href={bookingSettings.chatFacebook || 'https://facebook.com/PotiYouthHub/'}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="group flex items-center space-x-3 bg-slate-900 hover:bg-slate-850 text-white px-3.5 py-1.5 rounded-2xl shadow-xl border border-slate-850 transition-all hover:-translate-y-0.5"
+              id="chat-fb-link"
+            >
+              <span className="text-[11px] font-sans font-black text-slate-200 tracking-wide uppercase select-none">
+                Facebook
+              </span>
+              <div className="w-10 h-10 rounded-xl bg-[#1877f2] text-white flex items-center justify-center shadow-md grow-0 shrink-0">
+                <Facebook className="h-5 w-5 text-white" />
+              </div>
+            </a>
+
+            {/* Whatsapp Link Option */}
+            <a
+              href={bookingSettings.chatWhatsapp || 'https://wa.me/995599123456'}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="group flex items-center space-x-3 bg-slate-900 hover:bg-slate-850 text-white px-3.5 py-1.5 rounded-2xl shadow-xl border border-slate-850 transition-all hover:-translate-y-0.5"
+              id="chat-wa-link"
+            >
+              <span className="text-[11px] font-sans font-black text-slate-200 tracking-wide uppercase select-none">
+                WhatsApp
+              </span>
+              <div className="w-10 h-10 rounded-xl bg-[#25d366] text-white flex items-center justify-center shadow-md grow-0 shrink-0">
+                <MessageCircle className="h-5 w-5 text-white" />
+              </div>
+            </a>
+
+            {/* Email Link Option */}
+            <a
+              href={`mailto:${bookingSettings.chatEmail || 'yhub.poti@gmail.com'}`}
+              className="group flex items-center space-x-3 bg-slate-900 hover:bg-slate-850 text-white px-3.5 py-1.5 rounded-2xl shadow-xl border border-slate-850 transition-all hover:-translate-y-0.5"
+              id="chat-email-link"
+            >
+              <span className="text-[11px] font-sans font-black text-slate-200 tracking-wide uppercase select-none">
+                ელ-ფოსტა
+              </span>
+              <div className="w-10 h-10 rounded-xl bg-rose-500 text-white flex items-center justify-center shadow-md grow-0 shrink-0">
+                <Mail className="h-5 w-5 text-white" />
+              </div>
+            </a>
+
+            {/* Phone Link Option */}
+            <a
+              href={`tel:${bookingSettings.chatPhone || '+995599123456'}`}
+              className="group flex items-center space-x-3 bg-slate-900 hover:bg-slate-850 text-white px-3.5 py-1.5 rounded-2xl shadow-xl border border-slate-850 transition-all hover:-translate-y-0.5"
+              id="chat-phone-link"
+            >
+              <span className="text-[11px] font-sans font-black text-slate-200 tracking-wide uppercase select-none">
+                ტელეფონი
+              </span>
+              <div className="w-10 h-10 rounded-xl bg-emerald-500 text-white flex items-center justify-center shadow-md grow-0 shrink-0">
+                <Phone className="h-5 w-5 text-white" />
+              </div>
+            </a>
+          </div>
+        )}
+
+        {/* Main Floating Button */}
+        <button
+          id="chat-main-toggle"
+          onClick={() => setChatOpen(!chatOpen)}
+          className={`w-14 h-14 rounded-full flex items-center justify-center text-white transition-all shadow-xl hover:scale-110 active:scale-95 cursor-pointer relative ${
+            chatOpen ? 'bg-slate-800 rotate-90' : 'bg-slate-900'
+          }`}
+          title="კონტაქტი"
+        >
+          {chatOpen ? (
+            <X className="h-6 w-6" />
+          ) : (
+            <>
+              <MessageCircle className="h-6 w-6 animate-pulse" />
+              <span className="absolute -top-1 -right-0.5 flex h-3 w-3">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-450 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-brand-500"></span>
+              </span>
+            </>
+          )}
+        </button>
+      </div>
 
       {/* Custom Toast Alert Banners */}
       {notification && (

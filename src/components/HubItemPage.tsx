@@ -173,7 +173,7 @@ export default function HubItemPage({ hubItems, onNavigateToBooking }: HubItemPa
             {/* Meta details */}
             <div className="flex items-center space-x-2 text-xs sm:text-sm text-slate-400 font-semibold mb-4">
               <Calendar className="h-4 w-4 text-slate-450" />
-              <span>გამოქვეყნდა: {item.date}</span>
+              <span>გამოქვეყნდა: {item.date ? item.date.substring(0, 10) : ''}</span>
             </div>
             
             <h1 className="font-display font-black text-3xl sm:text-4xl md:text-5xl text-slate-900 leading-tight tracking-tight">

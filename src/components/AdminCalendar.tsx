@@ -461,7 +461,7 @@ export default function AdminCalendar({
 
                     <div className="flex items-center space-x-2 pl-5 text-[11px]">
                       <Users className="h-3.5 w-3.5 text-slate-450 shrink-0" />
-                      <span>ტევადობა: {b.numPeople} კაცი</span>
+                      <span>ტევადობა: {b.numPeople} პერსონა</span>
                     </div>
 
                     <div className="flex items-center space-x-2 pl-5 text-[11px]">

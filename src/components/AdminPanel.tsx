@@ -283,6 +283,7 @@ export default function AdminPanel({
   const [roomPrice, setRoomPrice] = useState(15);
   const [roomDayPrice, setRoomDayPrice] = useState(120);
   const [roomImg, setRoomImg] = useState('');
+  const [roomOrder, setRoomOrder] = useState<number>(0);
   const [roomAdditionalImages, setRoomAdditionalImages] = useState<string[]>([]);
   const [roomCoverUploading, setRoomCoverUploading] = useState(false);
   const [roomAdditionalUploading, setRoomAdditionalUploading] = useState(false);
@@ -324,33 +325,10 @@ export default function AdminPanel({
   const [settingsBannerOverlayOpacity, setSettingsBannerOverlayOpacity] = useState(50);
   const [settingsBannerUploading, setSettingsBannerUploading] = useState(false);
 
-  // Helper to format any date string into local datetime-local compatible format (YYYY-MM-DDTHH:MM)
+  // Helper to format any date string into simple input date format (YYYY-MM-DD)
   const formatToLocalDateTimeString = (dateStr: string): string => {
     if (!dateStr) return '';
-    if (dateStr.includes('T')) {
-      return dateStr.substring(0, 16);
-    }
-    if (dateStr.includes(' ')) {
-      return dateStr.replace(' ', 'T').substring(0, 16);
-    }
-    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-      return `${dateStr}T12:00`;
-    }
-    try {
-      const d = new Date(dateStr);
-      if (isNaN(d.getTime())) {
-        const now = new Date();
-        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}T12:00`;
-      }
-      const year = d.getFullYear();
-      const month = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      const hours = String(d.getHours()).padStart(2, '0');
-      const minutes = String(d.getMinutes()).padStart(2, '0');
-      return `${year}-${month}-${day}T${hours}:${minutes}`;
-    } catch {
-      return '';
-    }
+    return dateStr.substring(0, 10);
   };
 
   const getCurrentLocalDateTimeString = (): string => {
@@ -358,9 +336,7 @@ export default function AdminPanel({
     const year = d.getFullYear();
     const month = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');
-    const hours = String(d.getHours()).padStart(2, '0');
-    const minutes = String(d.getMinutes()).padStart(2, '0');
-    return `${year}-${month}-${day}T${hours}:${minutes}`;
+    return `${year}-${month}-${day}`;
   };
 
   const handleSettingsBannerUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -416,7 +392,8 @@ export default function AdminPanel({
         imageUrls: roomAdditionalImages.length > 0 ? roomAdditionalImages : undefined,
         features: featuresArr,
         panoramaUrl: roomPanoramaUrl || undefined,
-        videoUrl: roomVideoUrl || undefined
+        videoUrl: roomVideoUrl || undefined,
+        order: Number(roomOrder)
       });
       setEditRoomId(null);
     } else {
@@ -431,7 +408,8 @@ export default function AdminPanel({
         imageUrls: roomAdditionalImages.length > 0 ? roomAdditionalImages : undefined,
         features: featuresArr,
         panoramaUrl: roomPanoramaUrl || undefined,
-        videoUrl: roomVideoUrl || undefined
+        videoUrl: roomVideoUrl || undefined,
+        order: Number(roomOrder)
       });
     }
 
@@ -442,6 +420,7 @@ export default function AdminPanel({
     setRoomPrice(15);
     setRoomDayPrice(120);
     setRoomImg('');
+    setRoomOrder(0);
     setRoomAdditionalImages([]);
     setRoomFeatures('');
     setRoomPanoramaUrl('');
@@ -458,6 +437,7 @@ export default function AdminPanel({
     setRoomPrice(room.price);
     setRoomDayPrice(room.dayPrice || Math.round(room.price * 8));
     setRoomImg(room.imageUrl);
+    setRoomOrder(room.order !== undefined ? room.order : 0);
     setRoomAdditionalImages(room.imageUrls || []);
     setRoomFeatures(room.features.join(', '));
     setRoomPanoramaUrl(room.panoramaUrl || '');
@@ -1200,6 +1180,7 @@ export default function AdminPanel({
                         setRoomCap(10);
                         setRoomPrice(15);
                         setRoomImg('');
+                        setRoomOrder(0);
                         setRoomFeatures('');
                         setShowRoomForm(!showRoomForm);
                       }}
@@ -1258,13 +1239,25 @@ export default function AdminPanel({
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div className="sm:col-span-2">
-                        <label className="block text-xs font-bold text-slate-500 mb-1">მაქსიმალური ტევადობა (ადამიანი) *</label>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 mb-1">მაქსიმალური ტევადობა (პერსონა - 0 საჩვენებლად გამორთავს) *</label>
                         <input
                           id="admin-room-capacity"
                           type="number"
                           value={roomCap}
-                          onChange={(e) => setRoomCap(Number(e.target.value) || 1)}
+                          onChange={(e) => setRoomCap(Math.max(0, Number(e.target.value)))}
+                          className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-sans focus:outline-hidden"
+                          required
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 mb-1">სორტირების რიგითობა (რიგი მთავარ გვერდზე) *</label>
+                        <input
+                          id="admin-room-order"
+                          type="number"
+                          value={roomOrder}
+                          onChange={(e) => setRoomOrder(Number(e.target.value) || 0)}
                           className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-sans focus:outline-hidden"
                           required
                         />
@@ -1485,7 +1478,11 @@ export default function AdminPanel({
                       </div>
 
                       <div className="flex justify-between items-center text-xs font-medium border-t border-slate-150 pt-3 mt-2">
-                        <span className="text-slate-450">ტევადობა: {room.capacity} კაცი</span>
+                        {room.capacity > 0 ? (
+                          <span className="text-slate-450">ტევადობა: {room.capacity} პერსონა</span>
+                        ) : (
+                          <span />
+                        )}
                         <div className="flex space-x-1.5 items-center">
                           {onReorderRoom && (
                             <div className="flex space-x-1 border-r border-slate-200 pr-2 mr-1">
@@ -1738,10 +1735,10 @@ export default function AdminPanel({
                       </div>
 
                       <div>
-                        <label className="block text-xs font-bold text-slate-500 mb-1">გამოქვეყნების დრო/თარიღი *</label>
+                        <label className="block text-xs font-bold text-slate-500 mb-1">გამოქვეყნების თარიღი *</label>
                         <input
                           id="admin-hub-date"
-                          type="datetime-local"
+                          type="date"
                           value={hubDate}
                           onChange={(e) => setHubDate(e.target.value)}
                           className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-sans focus:outline-hidden cursor-pointer font-semibold text-slate-700"
@@ -2069,7 +2066,7 @@ export default function AdminPanel({
                               {item.category === 'news' ? 'ბლოგი' : item.category === 'training' ? 'ტრენინგი' : item.category === 'contest' ? 'კონკურსი' : item.category === 'general' ? 'სხვადასხვა' : 'ვაკანსია'}
                             </span>
                           </div>
-                          <span className="text-[10px] text-slate-400 font-mono mt-0.5 block">გამოქვეყნდა: {item.date}</span>
+                          <span className="text-[10px] text-slate-400 font-mono mt-0.5 block">გამოქვეყნდა: {item.date ? item.date.substring(0, 10) : ''}</span>
                         </div>
                       </div>
 
@@ -2520,6 +2517,11 @@ export default function AdminPanel({
                   const hubPhone = formData.get('hubPhone') as string;
                   const hubWorkHours = formData.get('hubWorkHours') as string;
                   
+                  const chatFacebook = formData.get('chatFacebook') as string;
+                  const chatWhatsapp = formData.get('chatWhatsapp') as string;
+                  const chatEmail = formData.get('chatEmail') as string;
+                  const chatPhone = formData.get('chatPhone') as string;
+                  
                   const invoiceTitle = formData.get('invoiceTitle') as string;
                   const invoiceOrgName = formData.get('invoiceOrgName') as string;
                   const invoiceBankName = formData.get('invoiceBankName') as string;
@@ -2549,6 +2551,10 @@ export default function AdminPanel({
                     hubEmail,
                     hubPhone,
                     hubWorkHours,
+                    chatFacebook,
+                    chatWhatsapp,
+                    chatEmail,
+                    chatPhone,
                     invoiceTitle,
                     invoiceOrgName,
                     invoiceBankName,
@@ -2627,9 +2633,67 @@ export default function AdminPanel({
                           type="text"
                           name="hubWorkHours"
                           defaultValue={bookingSettings?.hubWorkHours ?? 'ორშაბათი - პარასკევი: 10:00 - 20:00'}
-                          className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-sans focus:outline-hidden"
+                          className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-sans focus:outline-hidden"
                           required
                         />
+                      </div>
+                    </div>
+
+                    {/* Chat Settings Sub-section within Part A */}
+                    <div className="pt-4 border-t border-slate-100">
+                      <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                        ჩატის მცურავი ღილაკის კონფიგურაცია (Floating Chat Box Settings)
+                      </h4>
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 mb-1">Facebook ლინკი *</label>
+                          <input
+                            type="text"
+                            name="chatFacebook"
+                            defaultValue={bookingSettings?.chatFacebook ?? 'https://facebook.com/PotiYouthHub/'}
+                            placeholder="მაგ: https://facebook.com/PotiYouthHub/"
+                            className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-sans focus:outline-hidden"
+                            required
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 mb-1">WhatsApp ლინკი/ნომერი *</label>
+                          <input
+                            type="text"
+                            name="chatWhatsapp"
+                            defaultValue={bookingSettings?.chatWhatsapp ?? 'https://wa.me/995599123456'}
+                            placeholder="მაგ: https://wa.me/995599123456"
+                            className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-sans focus:outline-hidden"
+                            required
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 mb-1">ელ-ფოსტა ჩატისთვის *</label>
+                          <input
+                            type="email"
+                            name="chatEmail"
+                            defaultValue={bookingSettings?.chatEmail ?? 'yhub.poti@gmail.com'}
+                            placeholder="მაგ: yhub.poti@gmail.com"
+                            className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-sans focus:outline-hidden"
+                            required
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 mb-1">ტელეფონის ნომერი ჩატისთვის *</label>
+                          <input
+                            type="text"
+                            name="chatPhone"
+                            defaultValue={bookingSettings?.chatPhone ?? '+995599123456'}
+                            placeholder="მაგ: +995599123456"
+                            className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-sans focus:outline-hidden"
+                            required
+                          />
+                        </div>
                       </div>
                     </div>
                   </div>

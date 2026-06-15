@@ -464,10 +464,12 @@ export default function RoomBooking({
 
                         {/* Room controls trigger toolbar */}
                         <div className="mt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-t border-slate-100 pt-3">
-                          <span className="flex items-center text-xs text-slate-500 font-bold">
-                            <Users className="h-3.5 w-3.5 mr-1" />
-                            <span>ტევადობა: {room.capacity} კაცი</span>
-                          </span>
+                          {room.capacity > 0 && (
+                            <span className="flex items-center text-xs text-slate-500 font-bold">
+                              <Users className="h-3.5 w-3.5 mr-1" />
+                              <span>ტევადობა: {room.capacity} პერსონა</span>
+                            </span>
+                          )}
 
                           <button
                             type="button"
