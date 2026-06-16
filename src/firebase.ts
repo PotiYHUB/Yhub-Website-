@@ -10,28 +10,10 @@ import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../firebase-applet-config.json';
 
 // Initialize the core Firebase App
-const firebaseAppConfig = {
-  apiKey: (import.meta as any).env.VITE_FIREBASE_API_KEY || firebaseConfig.apiKey,
-  authDomain: (import.meta as any).env.VITE_FIREBASE_AUTH_DOMAIN || firebaseConfig.authDomain,
-  projectId: (import.meta as any).env.VITE_FIREBASE_PROJECT_ID || firebaseConfig.projectId,
-  storageBucket: (import.meta as any).env.VITE_FIREBASE_STORAGE_BUCKET || firebaseConfig.storageBucket,
-  messagingSenderId: (import.meta as any).env.VITE_FIREBASE_MESSAGING_SENDER_ID || firebaseConfig.messagingSenderId,
-  appId: (import.meta as any).env.VITE_FIREBASE_APP_ID || firebaseConfig.appId,
-};
-
-const app = initializeApp(firebaseAppConfig);
-
-// Calculate the correct Firestore database ID
-// If the user has configured their own Firebase project, use the standard "(default)" database
-// Otherwise, use the custom AI Studio developer sandbox database
-const targetDatabaseId = (import.meta as any).env.VITE_FIRESTORE_DATABASE_ID !== undefined
-  ? ((import.meta as any).env.VITE_FIRESTORE_DATABASE_ID || undefined)
-  : (firebaseAppConfig.projectId === 'gen-lang-client-0921844488'
-      ? (firebaseConfig.firestoreDatabaseId || undefined)
-      : undefined);
+const app = initializeApp(firebaseConfig);
 
 // Initialize Firestore and Auth Services
-export const db = getFirestore(app, targetDatabaseId);
+export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
 export const storage = getStorage(app);
 export const googleProvider = new GoogleAuthProvider();
