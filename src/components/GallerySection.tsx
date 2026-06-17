@@ -6,6 +6,7 @@
 import React, { useState } from 'react';
 import { MediaItem } from '../types';
 import { Image, Play, Calendar, X, Eye, Film, ChevronLeft, ChevronRight } from 'lucide-react';
+import { formatToDayMonthYear } from '../utils/dateFormatter';
 
 interface GallerySectionProps {
   mediaItems: MediaItem[];
@@ -134,7 +135,7 @@ export default function GallerySection({ mediaItems }: GallerySectionProps) {
               <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent flex flex-col justify-end p-5">
                 <div className="flex items-center space-x-1.5 text-xs text-brand-300 font-medium mb-1.5">
                   <Calendar className="h-3.5 w-3.5" />
-                  <span>{item.date}</span>
+                  <span>{formatToDayMonthYear(item.date)}</span>
                 </div>
                 <h4 className="font-display font-bold text-sm sm:text-base leading-snug line-clamp-2">
                   {item.caption}
@@ -270,7 +271,7 @@ export default function GallerySection({ mediaItems }: GallerySectionProps) {
             >
               <div className="flex justify-center items-center space-x-2 text-brand-400 text-xs font-semibold font-mono tracking-wider mb-2">
                 <Calendar className="h-3.5 w-3.5 text-brand-400" />
-                <span>{lightboxItem.date}</span>
+                <span>{formatToDayMonthYear(lightboxItem.date)}</span>
               </div>
               <h4 className="font-display text-sm sm:text-base text-slate-100 font-bold max-w-2xl mx-auto leading-relaxed">
                 {lightboxItem.caption}

@@ -10,6 +10,7 @@ import {
   AlertTriangle, ChevronLeft, ChevronRight, MessageSquare, 
   Building2, User2, Eye, Info, Percent, X, Check, Youtube, Compass, GraduationCap 
 } from 'lucide-react';
+import { formatToDayMonthYear } from '../utils/dateFormatter';
 
 interface RoomBookingProps {
   rooms: Room[];
@@ -387,9 +388,6 @@ export default function RoomBooking({
         
         {/* Title Heading */}
         <div className="text-center max-w-3xl mx-auto mb-16">
-          <span className="text-emerald-600 text-xs font-bold tracking-widest uppercase bg-emerald-50 px-3 py-1.5 rounded-full font-mono">
-            ჯავშნის სისტემა
-          </span>
           <h2 className="mt-4 text-3xl sm:text-4xl font-display font-black text-slate-900 tracking-tight">
             დაჯავშნე სამუშაო სივრცე
           </h2>
@@ -670,7 +668,7 @@ export default function RoomBooking({
                               return (
                                 <div key={dateStr} className="p-2 rounded-lg bg-slate-50 border border-slate-100 space-y-1">
                                   <div className="flex justify-between items-center">
-                                    <span className="text-xs font-black text-slate-700">{dateStr}</span>
+                                    <span className="text-xs font-black text-slate-700">{formatToDayMonthYear(dateStr)}</span>
                                     {dayFullyBooked && (
                                       <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase bg-rose-100 text-rose-700">
                                         დაკავებულია სრულად

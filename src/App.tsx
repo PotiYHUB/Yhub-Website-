@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Navbar from './components/Navbar';
 import HubContent from './components/HubContent';
 import GallerySection from './components/GallerySection';
@@ -39,6 +39,7 @@ import {
 } from 'firebase/firestore';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { db, auth, loginWithGoogle, OperationType, handleFirestoreError, sanitizeForFirestore } from './firebase';
+import { apiClient } from './utils/apiClient';
 
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 
@@ -98,12 +99,35 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
 
-  // Core databases initialized via fallback defaults initially
-  const [rooms, setRooms] = useState<Room[]>(INITIAL_ROOMS);
-  const [bookings, setBookings] = useState<Booking[]>(INITIAL_BOOKINGS);
-  const [customQuestions, setCustomQuestions] = useState<CustomQuestion[]>(DEFAULT_CUSTOM_QUESTIONS);
-  const [hubItems, setHubItems] = useState<HubItem[]>(INITIAL_HUB_ITEMS);
-  const [mediaItems, setMediaItems] = useState<MediaItem[]>(INITIAL_MEDIA_ITEMS);
+  // Loading tracker state for each Firestore collection subscription
+  const [loadedCollections, setLoadedCollections] = useState({
+    rooms: false,
+    questions: false,
+    hubItems: false,
+    settings: false,
+    mediaItems: false
+  });
+
+  // Fail-safe: if data loading takes more than 4.5 seconds, force resolve to prevent locking
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setLoadedCollections(prev => ({
+        rooms: true,
+        questions: true,
+        hubItems: true,
+        settings: true,
+        mediaItems: true
+      }));
+    }, 4500);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Core databases initialized via blank states initially to prevent old hardcoded data flicker
+  const [rooms, setRooms] = useState<Room[]>([]);
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [customQuestions, setCustomQuestions] = useState<CustomQuestion[]>([]);
+  const [hubItems, setHubItems] = useState<HubItem[]>([]);
+  const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
   const [bookingSettings, setBookingSettings] = useState({
     fullDayDiscount: 10,
     multiDayDiscount: 15,
@@ -225,8 +249,89 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+  const isMySqlMode = (import.meta as any).env.VITE_DATABASE_MODE === 'mysql' && !!(import.meta as any).env.VITE_API_URL;
+
+  const fetchMySqlData = useCallback(async () => {
+    try {
+      const [roomsList, questionsList, hubList, settingsData, mediaList] = await Promise.all([
+        apiClient.getRooms(),
+        apiClient.getCustomQuestions(),
+        apiClient.getHubItems(),
+        apiClient.getBookingSettings(),
+        apiClient.getMediaItems(),
+      ]);
+
+      if (roomsList && roomsList.length > 0) {
+        setRooms(roomsList);
+      } else {
+        setRooms(INITIAL_ROOMS);
+      }
+
+      if (questionsList && questionsList.length > 0) {
+        setCustomQuestions(questionsList);
+      } else {
+        setCustomQuestions(DEFAULT_CUSTOM_QUESTIONS);
+      }
+
+      if (hubList && hubList.length > 0) {
+        setHubItems(hubList);
+      } else {
+        setHubItems(INITIAL_HUB_ITEMS);
+      }
+
+      if (settingsData && Object.keys(settingsData).length > 0) {
+        setBookingSettings(prev => ({ ...prev, ...settingsData }));
+      }
+
+      if (mediaList && mediaList.length > 0) {
+        setMediaItems(mediaList);
+      } else {
+        setMediaItems(INITIAL_MEDIA_ITEMS);
+      }
+
+      setLoadedCollections({
+        rooms: true,
+        questions: true,
+        hubItems: true,
+        settings: true,
+        mediaItems: true,
+      });
+    } catch (err) {
+      console.warn("MySQL read failed. Falling back to default lists.", err);
+      setRooms(INITIAL_ROOMS);
+      setCustomQuestions(DEFAULT_CUSTOM_QUESTIONS);
+      setHubItems(INITIAL_HUB_ITEMS);
+      setMediaItems(INITIAL_MEDIA_ITEMS);
+      setLoadedCollections({
+        rooms: true,
+        questions: true,
+        hubItems: true,
+        settings: true,
+        mediaItems: true,
+      });
+    }
+  }, []);
+
+  const fetchMySqlAdminData = useCallback(async () => {
+    try {
+      const [bookingsList, emailsList] = await Promise.all([
+        apiClient.getBookings(),
+        apiClient.getEmails(),
+      ]);
+      setBookings(bookingsList || []);
+      setEmails(emailsList || []);
+    } catch (err) {
+      console.warn("MySQL admin analytics read failed.", err);
+    }
+  }, []);
+
   // 2. Real-time Firebase Firestore Synchronizations
   useEffect(() => {
+    if (isMySqlMode) {
+      fetchMySqlData();
+      return;
+    }
+
     // A. Subscribe to Rooms
     const unsubscribeRooms = onSnapshot(
       collection(db, 'rooms'),
@@ -256,10 +361,12 @@ export default function App() {
           });
           setRooms(roomsList);
         }
+        setLoadedCollections(prev => ({ ...prev, rooms: true }));
       },
       (error) => {
         console.warn("Firestore collection rooms offline, Using fallback data.", error);
         setRooms(INITIAL_ROOMS);
+        setLoadedCollections(prev => ({ ...prev, rooms: true }));
       }
     );
 
@@ -286,10 +393,12 @@ export default function App() {
         } else {
           setCustomQuestions(questionsList);
         }
+        setLoadedCollections(prev => ({ ...prev, questions: true }));
       },
       (error) => {
         console.warn("Firestore customQuestions collection read failed. Using fallback.", error);
         setCustomQuestions(DEFAULT_CUSTOM_QUESTIONS);
+        setLoadedCollections(prev => ({ ...prev, questions: true }));
       }
     );
 
@@ -324,10 +433,12 @@ export default function App() {
           });
           setHubItems(list);
         }
+        setLoadedCollections(prev => ({ ...prev, hubItems: true }));
       },
       (error) => {
         console.warn("Firestore hubItems read failed. Using fallback.", error);
         setHubItems(INITIAL_HUB_ITEMS);
+        setLoadedCollections(prev => ({ ...prev, hubItems: true }));
       }
     );
 
@@ -358,9 +469,11 @@ export default function App() {
             }).catch(err => console.error("Error setting initial settings:", err));
           }
         }
+        setLoadedCollections(prev => ({ ...prev, settings: true }));
       },
       (error) => {
         console.warn("Firestore settings read failed. Using fallback.", error);
+        setLoadedCollections(prev => ({ ...prev, settings: true }));
       }
     );
 
@@ -395,10 +508,12 @@ export default function App() {
           });
           setMediaItems(list);
         }
+        setLoadedCollections(prev => ({ ...prev, mediaItems: true }));
       },
       (error) => {
         console.warn("Firestore mediaItems read failed. Using fallback.", error);
         setMediaItems(INITIAL_MEDIA_ITEMS);
+        setLoadedCollections(prev => ({ ...prev, mediaItems: true }));
       }
     );
 
@@ -475,6 +590,11 @@ export default function App() {
       return;
     }
 
+    if (isMySqlMode) {
+      fetchMySqlAdminData();
+      return;
+    }
+
     const unsubscribeBookings = onSnapshot(
       collection(db, 'bookings'),
       (snapshot) => {
@@ -496,7 +616,7 @@ export default function App() {
 
   // 4. Live subscription to visitor's newly created guest booking
   useEffect(() => {
-    if (!submittedId) return;
+    if (!submittedId || isMySqlMode) return;
 
     const unsubscribeSubmitted = onSnapshot(
       doc(db, 'bookings', submittedId),
@@ -525,6 +645,10 @@ export default function App() {
   useEffect(() => {
     if (!user || user.email !== 'yhub.poti@gmail.com') {
       setEmails([]);
+      return;
+    }
+
+    if (isMySqlMode) {
       return;
     }
 
@@ -557,37 +681,74 @@ export default function App() {
       createdAt: new Date().toISOString()
     };
     try {
-      await setDoc(doc(db, 'bookings', id), sanitizeForFirestore(newBooking));
-      setSubmittedId(id);
-
-      // Save initial review email receipt in Firestore
       const initialEmail = {
-        to: newBooking.email,
+        id: Math.random().toString(36).substr(2, 9),
+        bookingId: id,
+        recipientEmail: newBooking.email,
         subject: `მოთხოვნა მიღებულია - ${bookingSettings.invoiceOrgName}`,
         type: 'pending',
         timestamp: new Date().toISOString().replace('T', ' ').substring(0, 16),
-        body: `გამარჯობა ${newBooking.firstName} ${newBooking.lastName}, \n\nთქვენი მოთხოვნა ოთახ(ებ)ზე „${newBooking.roomName}“ დარეგისტრირდა სისტემაში.\n\nდეტალები:\n- თარიღი: ${newBooking.date}\n- საათები: ${newBooking.durationHours}\n- ადამიანების რაოდენობა: ${newBooking.numPeople} კაცი\n\nჯავშანი ამჟამად არის განხილვის სტატუსში. ფოთის ახალგაზრდული ჰაბის ადმინისტრაცია უკვე განიხილავს ჯავშანს და დადასტურების შემთხვევაში ამავე ელ-ფოსტაზე გაგიზიარებთ საგადახდო ინვოისს, ხოლო უარყოფის შემთხვევაში შესაბამის შეტყობინებას.\n\nპატივისცემით,\n${bookingSettings.invoiceOrgName}.`
+        dateSent: new Date().toISOString().replace('T', ' ').substring(0, 16),
+        body: `გამარჯობა ${newBooking.firstName} ${newBooking.lastName}, \n\nთქვენი მოთხოვნა ოთახ(ებ)ზე „${newBooking.roomName}“ დარეგისტრირდა სისტემაში.\n\nდეტალები:\n- თარიღი: ${newBooking.date}\n- საათები: ${newBooking.durationHours}\n- ადამიანების რაოდენობა: ${newBooking.numPeople} კაცი\n\nჯავშანი ამჟამად არის განხილვის სტატუსში. ფოთის ახალგაზრდული ჰაბის ადმინისტრაცია უკვე განიხილავს ჯავშანს და დადასტურების შემთხვევაში ამავე ელ-ფოსტაზე გაგიზიარებთ საგადახდო ინვოისს, ხოლო უარყოფის შემთხვევაში შესაბამის შეტყობინებას.\n\nპატივისცემით,\n${bookingSettings.invoiceOrgName}.`,
+        status: 'pending'
       };
-      const emailId = Math.random().toString(36).substr(2, 9);
-      await setDoc(doc(db, 'emails', emailId), sanitizeForFirestore(initialEmail));
+
+      if (isMySqlMode) {
+        await apiClient.saveBooking(newBooking);
+        await apiClient.saveEmail(initialEmail);
+        await fetchMySqlData();
+        if (user && user.email === 'yhub.poti@gmail.com') {
+          await fetchMySqlAdminData();
+        } else {
+          setBookings(prev => [newBooking, ...prev]);
+        }
+        setSubmittedId(id);
+      } else {
+        await setDoc(doc(db, 'bookings', id), sanitizeForFirestore(newBooking));
+        setSubmittedId(id);
+        const emailId = Math.random().toString(36).substr(2, 9);
+        await setDoc(doc(db, 'emails', emailId), sanitizeForFirestore(initialEmail));
+      }
     } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, `bookings/${id}`);
+      if (isMySqlMode) {
+        console.error("MySQL Save Booking Error:", err);
+      } else {
+        handleFirestoreError(err, OperationType.CREATE, `bookings/${id}`);
+      }
     }
   };
 
   const handleAddRoom = async (room: Room) => {
     try {
-      await setDoc(doc(db, 'rooms', room.id), sanitizeForFirestore(room));
+      if (isMySqlMode) {
+        await apiClient.saveRoom(room);
+        await fetchMySqlData();
+      } else {
+        await setDoc(doc(db, 'rooms', room.id), sanitizeForFirestore(room));
+      }
     } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, `rooms/${room.id}`);
+      if (isMySqlMode) {
+        console.error("MySQL Add Room Error:", err);
+      } else {
+        handleFirestoreError(err, OperationType.CREATE, `rooms/${room.id}`);
+      }
     }
   };
 
   const handleUpdateRoom = async (updatedRoom: Room) => {
     try {
-      await setDoc(doc(db, 'rooms', updatedRoom.id), sanitizeForFirestore(updatedRoom));
+      if (isMySqlMode) {
+        await apiClient.saveRoom(updatedRoom);
+        await fetchMySqlData();
+      } else {
+        await setDoc(doc(db, 'rooms', updatedRoom.id), sanitizeForFirestore(updatedRoom));
+      }
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `rooms/${updatedRoom.id}`);
+      if (isMySqlMode) {
+        console.error("MySQL Update Room Error:", err);
+      } else {
+        handleFirestoreError(err, OperationType.UPDATE, `rooms/${updatedRoom.id}`);
+      }
     }
   };
 
@@ -597,10 +758,19 @@ export default function App() {
       'ნამდვილად გსურთ ამ ოთახის წაშლა?',
       async () => {
         try {
-          await deleteDoc(doc(db, 'rooms', id));
+          if (isMySqlMode) {
+            await apiClient.deleteRoom(id);
+            await fetchMySqlData();
+          } else {
+            await deleteDoc(doc(db, 'rooms', id));
+          }
           showNotification('ოთახი წარმატებით წაიშალა', 'success');
         } catch (err) {
-          handleFirestoreError(err, OperationType.DELETE, `rooms/${id}`);
+          if (isMySqlMode) {
+            console.error("MySQL Delete Room Error:", err);
+          } else {
+            handleFirestoreError(err, OperationType.DELETE, `rooms/${id}`);
+          }
           showNotification('ოთახის წაშლა ვერ მოხერხდა', 'error');
         }
       }
@@ -613,10 +783,19 @@ export default function App() {
       'ნამდვილად გსურთ ამ ჯავშნის სამუდამოდ წაშლა? (ეს ქმედება შეუქცევადია)',
       async () => {
         try {
-          await deleteDoc(doc(db, 'bookings', id));
+          if (isMySqlMode) {
+            await apiClient.deleteBooking(id);
+            await fetchMySqlAdminData();
+          } else {
+            await deleteDoc(doc(db, 'bookings', id));
+          }
           showNotification('ჯავშანი წარმატებით წაიშალა', 'success');
         } catch (err) {
-          handleFirestoreError(err, OperationType.DELETE, `bookings/${id}`);
+          if (isMySqlMode) {
+            console.error("MySQL Delete Booking Error:", err);
+          } else {
+            handleFirestoreError(err, OperationType.DELETE, `bookings/${id}`);
+          }
           showNotification('ჯავშნის წაშლა ვერ მოხერხდა', 'error');
         }
       }
@@ -658,11 +837,21 @@ export default function App() {
     }
 
     try {
-      await setDoc(doc(db, 'rooms', itemA.id), sanitizeForFirestore(itemA));
-      await setDoc(doc(db, 'rooms', itemB.id), sanitizeForFirestore(itemB));
+      if (isMySqlMode) {
+        await apiClient.saveRoom(itemA);
+        await apiClient.saveRoom(itemB);
+        await fetchMySqlData();
+      } else {
+        await setDoc(doc(db, 'rooms', itemA.id), sanitizeForFirestore(itemA));
+        await setDoc(doc(db, 'rooms', itemB.id), sanitizeForFirestore(itemB));
+      }
       showNotification('ოთახების თანამიმდევრობა განახლდა', 'success');
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `rooms/${itemA.id}`);
+      if (isMySqlMode) {
+        console.error("MySQL Reorder Room Error:", err);
+      } else {
+        handleFirestoreError(err, OperationType.UPDATE, `rooms/${itemA.id}`);
+      }
       showNotification('თანამიმდევრობის შენახვა ვერ მოხერხდა', 'error');
     }
   };
@@ -676,22 +865,36 @@ export default function App() {
         status: 'approved',
         invoiceNumber: invoiceNum
       };
-      await setDoc(doc(db, 'bookings', id), sanitizeForFirestore(updated));
-      showNotification('ჯავშანი წარმატებით დადასტურდა და ინვოისი გაიგზავნა', 'success');
 
-      // Save approval with invoice email in Firestore
       const approveEmail = {
-        to: updated.email,
+        id: Math.random().toString(36).substr(2, 9),
+        bookingId: id,
+        recipientEmail: updated.email,
         subject: `თანხმობა ოთახის დაჯავშნაზე [${updated.roomName}] - ${bookingSettings.invoiceOrgName}`,
         type: 'approved',
         timestamp: new Date().toISOString().replace('T', ' ').substring(0, 16),
+        dateSent: new Date().toISOString().replace('T', ' ').substring(0, 16),
         body: `გამარჯობა ${updated.firstName} ${updated.lastName}, \n\nმოხარულები ვართ გაცნობოთ, რომ თქვენი მოთხოვნა „${updated.roomName}“-ს დაჯავშნაზე (${updated.date}, ${updated.durationHours}) წარმატებით დადასტურდა! \n\nჯავშნის კოდი: RSV-${updated.id}.\nსაერთო საფასური შეადგენს: ₾${updated.totalPrice}.00.\n\nმიბმულია საგადახდო ინვოისი #${invoiceNum}. გთხოვთ გადაიხადოთ მითითებულ საბანკო ანგარიშზე ჰაბში მოსვლამდე.\n\nსაბანკო რეკვიზიტები:\n- მიმღები: ${bookingSettings.invoiceOrgName}\n- ბანკი: ${bookingSettings.invoiceBankName}\n- ანგარიში (IBAN): ${bookingSettings.invoiceIban}\n\nპატივისცემით, \n${bookingSettings.invoiceOrgName}.`,
-        invoiceNum: invoiceNum
+        invoiceNum: invoiceNum,
+        status: 'approved'
       };
-      const emailId = Math.random().toString(36).substr(2, 9);
-      await setDoc(doc(db, 'emails', emailId), sanitizeForFirestore(approveEmail));
+
+      if (isMySqlMode) {
+        await apiClient.saveBooking(updated);
+        await apiClient.saveEmail(approveEmail);
+        await fetchMySqlAdminData();
+      } else {
+        await setDoc(doc(db, 'bookings', id), sanitizeForFirestore(updated));
+        const emailId = Math.random().toString(36).substr(2, 9);
+        await setDoc(doc(db, 'emails', emailId), sanitizeForFirestore(approveEmail));
+      }
+      showNotification('ჯავშანი წარმატებით დადასტურდა და ინვოისი გაიგზავნა', 'success');
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `bookings/${id}`);
+      if (isMySqlMode) {
+        console.error("MySQL Approve Booking Error:", err);
+      } else {
+        handleFirestoreError(err, OperationType.UPDATE, `bookings/${id}`);
+      }
       showNotification('შეცდომა ჯავშნის დადასტურებისას', 'error');
     }
   };
@@ -705,41 +908,73 @@ export default function App() {
         status: 'rejected',
         adminNotes: reason
       };
-      await setDoc(doc(db, 'bookings', id), sanitizeForFirestore(updated));
-      showNotification('ჯავშანი უარყოფილია', 'info');
 
-      // Save rejection email in Firestore
       const rejectEmail = {
-        to: updated.email,
+        id: Math.random().toString(36).substr(2, 9),
+        bookingId: id,
+        recipientEmail: updated.email,
         subject: `უარყოფა ოთახის დაჯავშნაზე - ${bookingSettings.invoiceOrgName}`,
         type: 'rejected',
         timestamp: new Date().toISOString().replace('T', ' ').substring(0, 16),
-        body: `გამარჯობა ${updated.firstName} ${updated.lastName}, \n\nსამწუხაროდ, თქვენი მოთხოვნა „${updated.roomName}“-ს დაჯავშნაზე (${updated.date}, ${updated.durationHours}) ამ ეტაპზე ვერ დაკმაყოფილდა.\n\nუარყოფის მიზეზი:\n"${reason}"\n\nსხვა ალტერნატიული დროის ასარჩევად გთხოვთ ეწვიოთ ჩვენს პორტალს ან დაგვიკავშირდეთ ნომერზე: ${bookingSettings.hubPhone}.\n\nპატივისცემით, \n${bookingSettings.invoiceOrgName} ადმინისტრაცია.`
+        dateSent: new Date().toISOString().replace('T', ' ').substring(0, 16),
+        body: `გამარჯობა ${updated.firstName} ${updated.lastName}, \n\nსამწუხაროდ, თქვენი მოთხოვნა „${updated.roomName}“-ს დაჯავშნაზე (${updated.date}, ${updated.durationHours}) ამ ეტაპზე ვერ დაკმაყოფილდა.\n\nუარყოფის მიზეზი:\n"${reason}"\n\nსახვა ალტერნატიული დროის ასარჩევად გთხოვთ ეწვიოთ ჩვენს პორტალს ან დაგვიკავშირდეთ ნომერზე: ${bookingSettings.hubPhone}.\n\nპატივისცემით, \n${bookingSettings.invoiceOrgName} ადმინისტრაცია.`,
+        status: 'rejected'
       };
-      const emailId = Math.random().toString(36).substr(2, 9);
-      await setDoc(doc(db, 'emails', emailId), sanitizeForFirestore(rejectEmail));
+
+      if (isMySqlMode) {
+        await apiClient.saveBooking(updated);
+        await apiClient.saveEmail(rejectEmail);
+        await fetchMySqlAdminData();
+      } else {
+        await setDoc(doc(db, 'bookings', id), sanitizeForFirestore(updated));
+        const emailId = Math.random().toString(36).substr(2, 9);
+        await setDoc(doc(db, 'emails', emailId), sanitizeForFirestore(rejectEmail));
+      }
+      showNotification('ჯავშანი უარყოფილია', 'info');
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `bookings/${id}`);
+      if (isMySqlMode) {
+        console.error("MySQL Reject Booking Error:", err);
+      } else {
+        handleFirestoreError(err, OperationType.UPDATE, `bookings/${id}`);
+      }
       showNotification('შეცდომა ჯავშნის უარყოფისას', 'error');
     }
   };
 
   const handleDeleteEmail = async (id: string) => {
     try {
-      await deleteDoc(doc(db, 'emails', id));
+      if (isMySqlMode) {
+        await apiClient.deleteEmail(id);
+        await fetchMySqlAdminData();
+      } else {
+        await deleteDoc(doc(db, 'emails', id));
+      }
       showNotification('წერილი წარმატებით წაიშალა', 'success');
     } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, `emails/${id}`);
+      if (isMySqlMode) {
+        console.error("MySQL Delete Email Error:", err);
+      } else {
+        handleFirestoreError(err, OperationType.DELETE, `emails/${id}`);
+      }
       showNotification('წერილის წაშლა ვერ მოხერხდა', 'error');
     }
   };
 
   const handleAddQuestion = async (q: CustomQuestion) => {
     try {
-      await setDoc(doc(db, 'customQuestions', q.id), sanitizeForFirestore(q));
+      if (isMySqlMode) {
+        await apiClient.saveCustomQuestion(q);
+        await fetchMySqlData();
+      } else {
+        await setDoc(doc(db, 'customQuestions', q.id), sanitizeForFirestore(q));
+      }
       showNotification('კითხვა წარმატებით დაემატა', 'success');
     } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, `customQuestions/${q.id}`);
+      if (isMySqlMode) {
+        console.error("MySQL Add Question Error:", err);
+      } else {
+        handleFirestoreError(err, OperationType.CREATE, `customQuestions/${q.id}`);
+      }
       showNotification('კითხვის დამატება ვერ მოხერხდა', 'error');
     }
   };
@@ -750,10 +985,19 @@ export default function App() {
       'დარწმუნებული ხართ, რომ გსურთ კითხვის წაშლა?',
       async () => {
         try {
-          await deleteDoc(doc(db, 'customQuestions', id));
+          if (isMySqlMode) {
+            await apiClient.deleteCustomQuestion(id);
+            await fetchMySqlData();
+          } else {
+            await deleteDoc(doc(db, 'customQuestions', id));
+          }
           showNotification('კითხვა წარმატებით წაიშალა', 'success');
         } catch (err) {
-          handleFirestoreError(err, OperationType.DELETE, `customQuestions/${id}`);
+          if (isMySqlMode) {
+            console.error("MySQL Delete Question Error:", err);
+          } else {
+            handleFirestoreError(err, OperationType.DELETE, `customQuestions/${id}`);
+          }
           showNotification('კითხვის წაშლა ვერ მოხერხდა', 'error');
         }
       }
@@ -762,20 +1006,38 @@ export default function App() {
 
   const handleAddHubItem = async (item: HubItem) => {
     try {
-      await setDoc(doc(db, 'hubItems', item.id), sanitizeForFirestore(item));
+      if (isMySqlMode) {
+        await apiClient.saveHubItem(item);
+        await fetchMySqlData();
+      } else {
+        await setDoc(doc(db, 'hubItems', item.id), sanitizeForFirestore(item));
+      }
       showNotification('პოსტი წარმატებით დაემატა', 'success');
     } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, `hubItems/${item.id}`);
+      if (isMySqlMode) {
+        console.error("MySQL Add Hub Item Error:", err);
+      } else {
+        handleFirestoreError(err, OperationType.CREATE, `hubItems/${item.id}`);
+      }
       showNotification('პოსტის დამატება ვერ მოხერხდა', 'error');
     }
   };
 
   const handleUpdateHubItem = async (item: HubItem) => {
     try {
-      await setDoc(doc(db, 'hubItems', item.id), sanitizeForFirestore(item));
+      if (isMySqlMode) {
+        await apiClient.saveHubItem(item);
+        await fetchMySqlData();
+      } else {
+        await setDoc(doc(db, 'hubItems', item.id), sanitizeForFirestore(item));
+      }
       showNotification('პოსტი წარმატებით განახლდა', 'success');
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `hubItems/${item.id}`);
+      if (isMySqlMode) {
+        console.error("MySQL Update Hub Item Error:", err);
+      } else {
+        handleFirestoreError(err, OperationType.UPDATE, `hubItems/${item.id}`);
+      }
       showNotification('პოსტის განახლება ვერ მოხერხდა', 'error');
     }
   };
@@ -786,10 +1048,19 @@ export default function App() {
       'ნამდვილად გსურთ პოსტის წაშლა?',
       async () => {
         try {
-          await deleteDoc(doc(db, 'hubItems', id));
+          if (isMySqlMode) {
+            await apiClient.deleteHubItem(id);
+            await fetchMySqlData();
+          } else {
+            await deleteDoc(doc(db, 'hubItems', id));
+          }
           showNotification('პოსტი წარმატებით წაიშალა', 'success');
         } catch (err) {
-          handleFirestoreError(err, OperationType.DELETE, `hubItems/${id}`);
+          if (isMySqlMode) {
+            console.error("MySQL Delete Hub Item Error:", err);
+          } else {
+            handleFirestoreError(err, OperationType.DELETE, `hubItems/${id}`);
+          }
           showNotification('პოსტის წაშლა ვერ მოხერხდა', 'error');
         }
       }
@@ -835,31 +1106,59 @@ export default function App() {
     }
 
     try {
-      await setDoc(doc(db, 'hubItems', itemA.id), sanitizeForFirestore(itemA));
-      await setDoc(doc(db, 'hubItems', itemB.id), sanitizeForFirestore(itemB));
+      if (isMySqlMode) {
+        await apiClient.saveHubItem(itemA);
+        await apiClient.saveHubItem(itemB);
+        await fetchMySqlData();
+      } else {
+        await setDoc(doc(db, 'hubItems', itemA.id), sanitizeForFirestore(itemA));
+        await setDoc(doc(db, 'hubItems', itemB.id), sanitizeForFirestore(itemB));
+      }
       showNotification('პოსტების თანამიმდევრობა განახლდა', 'success');
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `hubItems/${itemA.id}`);
+      if (isMySqlMode) {
+        console.error("MySQL Reorder Hub Item Error:", err);
+      } else {
+        handleFirestoreError(err, OperationType.UPDATE, `hubItems/${itemA.id}`);
+      }
       showNotification('თანამიმდევრობის შენახვა ვერ მოხერხდა', 'error');
     }
   };
 
   const handleAddMediaItem = async (item: MediaItem) => {
     try {
-      await setDoc(doc(db, 'mediaItems', item.id), sanitizeForFirestore(item));
+      if (isMySqlMode) {
+        await apiClient.saveMediaItem(item);
+        await fetchMySqlData();
+      } else {
+        await setDoc(doc(db, 'mediaItems', item.id), sanitizeForFirestore(item));
+      }
       showNotification('მედია წარმატებით დაემატა', 'success');
     } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, `mediaItems/${item.id}`);
+      if (isMySqlMode) {
+        console.error("MySQL Add Media Item Error:", err);
+      } else {
+        handleFirestoreError(err, OperationType.CREATE, `mediaItems/${item.id}`);
+      }
       showNotification('მედიის დამატება ვერ მოხერხდა', 'error');
     }
   };
 
   const handleUpdateMediaItem = async (item: MediaItem) => {
     try {
-      await setDoc(doc(db, 'mediaItems', item.id), sanitizeForFirestore(item));
+      if (isMySqlMode) {
+        await apiClient.saveMediaItem(item);
+        await fetchMySqlData();
+      } else {
+        await setDoc(doc(db, 'mediaItems', item.id), sanitizeForFirestore(item));
+      }
       showNotification('მედია წარმატებით განახლდა', 'success');
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `mediaItems/${item.id}`);
+      if (isMySqlMode) {
+        console.error("MySQL Update Media Item Error:", err);
+      } else {
+        handleFirestoreError(err, OperationType.UPDATE, `mediaItems/${item.id}`);
+      }
       showNotification('მედიის განახლება ვერ მოხერხდა', 'error');
     }
   };
@@ -870,10 +1169,19 @@ export default function App() {
       'ნამდვილად გსურთ მედია ფაილის წაშლა გალერეიდან?',
       async () => {
         try {
-          await deleteDoc(doc(db, 'mediaItems', id));
+          if (isMySqlMode) {
+            await apiClient.deleteMediaItem(id);
+            await fetchMySqlData();
+          } else {
+            await deleteDoc(doc(db, 'mediaItems', id));
+          }
           showNotification('მედია წარმატებით წაიშალა', 'success');
         } catch (err) {
-          handleFirestoreError(err, OperationType.DELETE, `mediaItems/${id}`);
+          if (isMySqlMode) {
+            console.error("MySQL Delete Media Item Error:", err);
+          } else {
+            handleFirestoreError(err, OperationType.DELETE, `mediaItems/${id}`);
+          }
           showNotification('მედიის წაშლა ვერ მოხერხდა', 'error');
         }
       }
@@ -882,13 +1190,64 @@ export default function App() {
 
   const handleUpdateSettings = async (settings: any) => {
     try {
-      await setDoc(doc(db, 'settings', 'bookingSettings'), sanitizeForFirestore(settings));
+      if (isMySqlMode) {
+        await apiClient.saveBookingSettings(settings);
+        await fetchMySqlData();
+      } else {
+        await setDoc(doc(db, 'settings', 'bookingSettings'), sanitizeForFirestore(settings));
+      }
       showNotification('პარამეტრები წარმატებით შეინახა', 'success');
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, 'settings/bookingSettings');
+      if (isMySqlMode) {
+        console.error("MySQL Update Settings Error:", err);
+      } else {
+        handleFirestoreError(err, OperationType.UPDATE, 'settings/bookingSettings');
+      }
       showNotification('პარამეტრების შენახვა ვერ მოხერხდა', 'error');
     }
   };
+
+  const isDataLoading = !loadedCollections.rooms || 
+                        !loadedCollections.questions || 
+                        !loadedCollections.hubItems || 
+                        !loadedCollections.settings || 
+                        !loadedCollections.mediaItems;
+
+  if (authLoading || isDataLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-white text-brand-500 font-sans px-4 select-none">
+        <div className="relative flex flex-col items-center max-w-sm w-full text-center">
+          {/* Subtle brand glow effect */}
+          <div className="absolute -top-6 w-44 h-44 rounded-full bg-brand-100/40 blur-2xl" />
+          
+          <div className="relative mb-6 flex items-center justify-center">
+            <div className="absolute -inset-4 bg-brand-500/5 rounded-full blur-xl animate-pulse" />
+            <img 
+              src={logoImg} 
+              alt="კომპასის ემბლემა" 
+              className="relative w-28 h-28 md:w-32 md:h-32 object-contain animate-pulse duration-700"
+              referrerPolicy="no-referrer"
+            />
+          </div>
+          
+          <h2 className="text-xl font-bold font-display tracking-tight text-brand-600 mb-2 uppercase select-none">
+            ფოთის ახალგაზრდული ჰაბი
+          </h2>
+          <p className="text-sm text-brand-500/80 font-sans font-medium mb-6">
+            მონაცემები იტვირთება, გთხოვთ დაელოდოთ...
+          </p>
+          
+          <div className="w-56 h-1.5 bg-brand-100 rounded-full overflow-hidden relative shadow-sm">
+            <div className="absolute top-0 bottom-0 left-0 w-1/2 bg-brand-500 rounded-full animate-loadingBar" />
+          </div>
+          
+          <span className="mt-6 text-[10px] font-mono text-brand-500/60 uppercase tracking-widest block">
+            Poti Youth Hub • 2026
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col min-h-screen text-slate-800 selection:bg-slate-900 selection:text-white">
@@ -992,6 +1351,7 @@ export default function App() {
               {/* SECTION 1: News, Vacancies, Contests & Trainings CMS Grid wrapper */}
               <HubContent 
                 hubItems={hubItems} 
+                isLimited={true}
                 onNavigateToBooking={() => {
                   const el = document.getElementById('home-booking');
                   if (el) {
@@ -1012,6 +1372,44 @@ export default function App() {
                   bookingSettings={bookingSettings}
                 />
               </div>
+            </div>
+          } />
+
+          {/* Page: /posts showing all items */}
+          <Route path="/posts" element={
+            <div className="animate-fadeIn">
+              {/* Cover header for Posts page */}
+              <section className="relative bg-slate-900 py-16 sm:py-20 overflow-hidden text-white leading-snug">
+                <div className="absolute inset-0 z-0 opacity-100">
+                  <img 
+                    src={bookingSettings.homepageBannerUrl || heroBg} 
+                    alt="Background" 
+                    referrerPolicy="no-referrer"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <div 
+                  className="absolute inset-0 bg-gradient-to-r from-slate-950 via-slate-900/95 to-brand-950/70 z-10"
+                  style={{ opacity: (bookingSettings.homepageBannerOverlayOpacity !== undefined) ? (bookingSettings.homepageBannerOverlayOpacity / 100) : 0.5 }}
+                />
+                
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-20">
+                  <div className="max-w-3xl">
+                    <h1 className="text-3xl sm:text-4xl lg:text-5xl font-display font-black leading-tight tracking-tight">
+                      ყველა <span className="text-brand-400">განცხადება</span> & <span className="text-amber-400 font-semibold font-display">აქტივობა</span>
+                    </h1>
+                    <p className="mt-3 text-sm sm:text-base text-slate-300 font-sans leading-relaxed">
+                      ფოთის ახალგაზრდული ჰაბის ყველა მიმდინარე სიახლე, ტრენინგი და კონკურსი ერთ სივრცეში.
+                    </p>
+                  </div>
+                </div>
+              </section>
+
+              <HubContent 
+                hubItems={hubItems} 
+                isLimited={false}
+                onNavigateToBooking={() => handleNavigate('booking')} 
+              />
             </div>
           } />
 

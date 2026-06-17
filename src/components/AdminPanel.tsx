@@ -15,6 +15,7 @@ import {
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage } from '../firebase';
 import { optimizeImageForWeb, blobToBase64 } from '../utils/imageOptimizer';
+import { formatToDayMonthYear } from '../utils/dateFormatter';
 // @ts-ignore
 import logoImg from '../assets/images/small-logo.png';
 
@@ -1023,7 +1024,7 @@ export default function AdminPanel({
                           <div>
                             <span className="block text-[10px] text-slate-400 uppercase font-black tracking-wider">თარიღი & დრო</span>
                             <span className="font-medium text-slate-800 flex items-center mt-0.5">
-                              <Calendar className="h-3.5 w-3.5 mr-1 text-slate-450" /> {b.date}
+                              <Calendar className="h-3.5 w-3.5 mr-1 text-slate-450" /> {formatToDayMonthYear(b.date)}
                             </span>
                             <span className="font-mono text-xs text-slate-600 flex items-center mt-0.5">
                               <Clock className="h-3.5 w-3.5 mr-1 text-slate-455" /> {b.durationHours}
@@ -2393,7 +2394,7 @@ export default function AdminPanel({
                             
                             {/* Meta flags */}
                             <div className="absolute top-2.5 left-2.5 bg-slate-900/90 text-white text-[10px] font-bold font-mono px-2 py-1 rounded-md">
-                              {item.date}
+                              {formatToDayMonthYear(item.date)}
                             </div>
 
                             {item.order !== undefined && (
@@ -3501,7 +3502,7 @@ export default function AdminPanel({
                             {b.roomName}
                           </td>
                           <td className="px-3 border-r border-[#e1e1e1] font-mono text-[10.5px] text-slate-600 truncate">
-                            {b.date}
+                            {formatToDayMonthYear(b.date)}
                           </td>
                           <td className="px-3 border-r border-[#e1e1e1] font-sans text-[11px] text-slate-500 truncate">
                             {b.durationHours}
@@ -3744,7 +3745,7 @@ export default function AdminPanel({
                             ჯავშანი {selectedInvoiceBooking.durationHours} | დარეგისტრირებულია: {selectedInvoiceBooking.numPeople} კაცზე
                           </span>
                         </td>
-                        <td className="py-3 px-3 text-center font-mono text-xs">{selectedInvoiceBooking.date}</td>
+                        <td className="py-3 px-3 text-center font-mono text-xs">{formatToDayMonthYear(selectedInvoiceBooking.date)}</td>
                         <td className="py-3 px-3 text-center font-mono">
                           {Math.round(selectedInvoiceBooking.totalPrice / (rooms.find(r => r.id === selectedInvoiceBooking.roomId)?.price || 15))}
                         </td>

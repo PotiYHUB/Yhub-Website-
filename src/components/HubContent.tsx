@@ -7,13 +7,15 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { HubItem, HubCategory } from '../types';
 import { Calendar, MapPin, Award, Search, ArrowRight, Briefcase, Trophy, GraduationCap, Clock, HelpCircle, X } from 'lucide-react';
+import { formatToDayMonthYear } from '../utils/dateFormatter';
 
 interface HubContentProps {
   hubItems: HubItem[];
   onNavigateToBooking?: () => void;
+  isLimited?: boolean;
 }
 
-export default function HubContent({ hubItems, onNavigateToBooking }: HubContentProps) {
+export default function HubContent({ hubItems, onNavigateToBooking, isLimited = false }: HubContentProps) {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<HubCategory | 'all'>('all');
@@ -38,6 +40,8 @@ export default function HubContent({ hubItems, onNavigateToBooking }: HubContent
     const matchesCategory = selectedCategory === 'all' ? true : item.category === selectedCategory;
     return matchesSearch && matchesCategory;
   });
+
+  const displayedItems = isLimited ? filteredItems.slice(0, 6) : filteredItems;
 
   // Get icons and color themes for categories
   const getCategoryMeta = (category: HubCategory) => {
@@ -86,9 +90,6 @@ export default function HubContent({ hubItems, onNavigateToBooking }: HubContent
         
         {/* Header Section */}
         <div className="text-center max-w-3xl mx-auto mb-12">
-          <span className="text-brand-600 text-xs font-bold tracking-widest uppercase bg-brand-50 px-3 py-1.5 rounded-full">
-            ჰაბის აქტივობები
-          </span>
           <h2 className="mt-4 text-3xl sm:text-4xl font-display font-extrabold text-slate-900 tracking-tight">
             აღმოაჩინე ახალი შესაძლებლობები
           </h2>
@@ -186,7 +187,7 @@ export default function HubContent({ hubItems, onNavigateToBooking }: HubContent
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {filteredItems.map((item) => {
+            {displayedItems.map((item) => {
               const meta = getCategoryMeta(item.category);
               const CatIcon = meta.icon;
               return (
@@ -217,7 +218,7 @@ export default function HubContent({ hubItems, onNavigateToBooking }: HubContent
                     <div>
                       <div className="flex items-center space-x-1.5 text-xs text-slate-400 font-semibold mb-2.5">
                         <Calendar className="h-3.5 w-3.5" />
-                        <span>{item.date ? item.date.substring(0, 10) : ''}</span>
+                        <span>{item.date ? formatToDayMonthYear(item.date) : ''}</span>
                       </div>
                       <h3 
                         className="font-display font-extrabold text-lg text-slate-900 group-hover:text-brand-600 transition-colors line-clamp-2 leading-snug cursor-pointer"
@@ -235,7 +236,7 @@ export default function HubContent({ hubItems, onNavigateToBooking }: HubContent
                       {item.deadline ? (
                         <div className="text-left">
                           <span className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider">განაცხადის ვადა</span>
-                          <span className="font-mono text-xs font-semibold text-rose-500">{item.deadline}</span>
+                          <span className="font-mono text-xs font-semibold text-rose-500">{formatToDayMonthYear(item.deadline)}</span>
                         </div>
                       ) : (
                         <div className="text-left">
@@ -256,6 +257,19 @@ export default function HubContent({ hubItems, onNavigateToBooking }: HubContent
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {/* Read More Centered Button for Limiting View */}
+        {isLimited && filteredItems.length > 6 && (
+          <div className="mt-12 text-center">
+            <button
+              onClick={() => navigate('/posts')}
+              className="inline-flex items-center space-x-2 px-8 py-3.5 bg-brand-500 hover:bg-brand-600 text-white font-bold rounded-xl text-sm transition-all cursor-pointer shadow-md shadow-brand-100 hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0 duration-150 font-sans"
+            >
+              <span>მეტის ნახვა (ყველა განცხადება)</span>
+              <ArrowRight className="h-4.5 w-4.5" />
+            </button>
           </div>
         )}
 
@@ -290,7 +304,7 @@ export default function HubContent({ hubItems, onNavigateToBooking }: HubContent
               <div className="p-6 sm:p-8 overflow-y-auto flex-1">
                 <div className="flex items-center space-x-2 text-xs text-slate-400 font-semibold mb-3">
                   <Calendar className="h-3.5 w-3.5" />
-                  <span>გამოქვეყნდა: {selectedItem.date}</span>
+                  <span>გამოქვეყნდა: {formatToDayMonthYear(selectedItem.date)}</span>
                 </div>
                 
                 <h3 className="font-display font-extrabold text-2xl sm:text-3xl text-slate-900 leading-tight">
@@ -305,7 +319,7 @@ export default function HubContent({ hubItems, onNavigateToBooking }: HubContent
                         <Clock className="h-5 w-5 text-rose-500 mt-0.5 shrink-0" />
                         <div>
                           <span className="block text-[10px] uppercase font-bold text-slate-400 tracking-wider">განაცხადის ბოლო ვადა</span>
-                          <span className="font-mono text-sm font-semibold text-slate-800">{selectedItem.deadline}</span>
+                          <span className="font-mono text-sm font-semibold text-slate-800">{formatToDayMonthYear(selectedItem.deadline)}</span>
                         </div>
                       </div>
                     )}

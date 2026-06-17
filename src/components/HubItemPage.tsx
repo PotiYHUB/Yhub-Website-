@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { HubItem, HubCategory } from '../types';
 import { Calendar, MapPin, Award, Clock, ArrowLeft, Briefcase, Trophy, GraduationCap, Share2, Check, HelpCircle, X } from 'lucide-react';
+import { formatToDayMonthYear } from '../utils/dateFormatter';
 // @ts-ignore
 import logoImg from '../assets/images/small-logo.png';
 
@@ -173,7 +174,7 @@ export default function HubItemPage({ hubItems, onNavigateToBooking }: HubItemPa
             {/* Meta details */}
             <div className="flex items-center space-x-2 text-xs sm:text-sm text-slate-400 font-semibold mb-4">
               <Calendar className="h-4 w-4 text-slate-450" />
-              <span>გამოქვეყნდა: {item.date ? item.date.substring(0, 10) : ''}</span>
+              <span>გამოქვეყნდა: {item.date ? formatToDayMonthYear(item.date) : ''}</span>
             </div>
             
             <h1 className="font-display font-black text-3xl sm:text-4xl md:text-5xl text-slate-900 leading-tight tracking-tight">
@@ -193,7 +194,7 @@ export default function HubItemPage({ hubItems, onNavigateToBooking }: HubItemPa
                     <Clock className="h-5.5 w-5.5 text-rose-500 mt-0.5 shrink-0" />
                     <div>
                       <span className="block text-[10px] uppercase font-bold text-slate-400 tracking-wider">განაცხადის ვადა</span>
-                      <span className="font-mono text-sm font-semibold text-slate-800">{item.deadline}</span>
+                      <span className="font-mono text-sm font-semibold text-slate-800">{formatToDayMonthYear(item.deadline)}</span>
                     </div>
                   </div>
                 )}
