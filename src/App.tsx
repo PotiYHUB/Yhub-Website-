@@ -249,7 +249,17 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  const isMySqlMode = (import.meta as any).env.VITE_DATABASE_MODE === 'mysql' && !!(import.meta as any).env.VITE_API_URL;
+  const isMySqlMode = 
+    (import.meta as any).env.VITE_DATABASE_MODE === 'mysql' || 
+    (
+      typeof window !== 'undefined' && 
+      window.location.hostname && 
+      !window.location.hostname.includes('localhost') && 
+      !window.location.hostname.includes('127.0.0.1') && 
+      !window.location.hostname.includes('run.app') && 
+      !window.location.hostname.includes('firebase') && 
+      !window.location.hostname.includes('web.app')
+    );
 
   const fetchMySqlData = useCallback(async () => {
     try {
