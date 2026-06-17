@@ -29,7 +29,7 @@ service cloud.firestore {
              data.id is string && data.id.size() <= 128 &&
              data.name is string && data.name.size() <= 256 &&
              data.description is string && data.description.size() <= 2000 &&
-             data.capacity is int && data.capacity >= 1 && data.capacity <= 10000 &&
+             (data.capacity is int || data.capacity is float) && data.capacity >= 0 && data.capacity <= 10000 &&
              (data.price is int || data.price is float) && data.price >= 0 &&
              data.imageUrl is string && data.imageUrl.size() <= 2000000 &&
              data.features is list && data.features.size() <= 40 &&
@@ -79,7 +79,7 @@ service cloud.firestore {
              data.roomName is string && data.roomName.size() <= 256 &&
              data.date is string && data.date.size() <= 64 &&
              data.durationHours is string && data.durationHours.size() <= 128 &&
-             data.numPeople is int && data.numPeople >= 1 && data.numPeople <= 1000 &&
+             (data.numPeople is int || data.numPeople is float) && data.numPeople >= 1 && data.numPeople <= 1000 &&
              (data.totalPrice is int || data.totalPrice is float) && data.totalPrice >= 0 &&
              data.firstName is string && data.firstName.size() <= 128 &&
              data.lastName is string && data.lastName.size() <= 128 &&

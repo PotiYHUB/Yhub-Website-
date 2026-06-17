@@ -29,9 +29,16 @@ import {
 } from 'lucide-react';
 
 // Live Firestore integration imports
+import { 
+  collection, 
+  onSnapshot, 
+  setDoc, 
+  doc, 
+  deleteDoc,
+  getDocs
+} from 'firebase/firestore';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { auth, loginWithGoogle, OperationType, sanitizeForFirestore } from './firebase';
-import { apiClient } from './utils/apiClient';
+import { db, auth, loginWithGoogle, OperationType, handleFirestoreError, sanitizeForFirestore } from './firebase';
 
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 
@@ -218,59 +225,191 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // 2. Backend Data Loader (Dual local Storage and cPanel SQL API)
-  const [loadingData, setLoadingData] = useState(true);
-
-  const loadAllData = async () => {
-    try {
-      const token = await auth.currentUser?.getIdToken();
-      const payload = await apiClient.getAllData(token, submittedId || undefined);
-      
-      if (payload.rooms && payload.rooms.length > 0) {
-        setRooms(payload.rooms);
-      } else {
+  // 2. Real-time Firebase Firestore Synchronizations
+  useEffect(() => {
+    // A. Subscribe to Rooms
+    const unsubscribeRooms = onSnapshot(
+      collection(db, 'rooms'),
+      (snapshot) => {
+        const roomsList: Room[] = [];
+        snapshot.forEach((doc) => {
+          roomsList.push(doc.data() as Room);
+        });
+        
+        if (roomsList.length === 0) {
+          setRooms(INITIAL_ROOMS);
+          // Auto-seed if the admin opens initially
+          if (auth.currentUser?.email === 'yhub.poti@gmail.com') {
+            INITIAL_ROOMS.forEach(async (room) => {
+              try {
+                await setDoc(doc(db, 'rooms', room.id), sanitizeForFirestore(room));
+              } catch (err) {
+                console.error("Bootstrapping error:", err);
+              }
+            });
+          }
+        } else {
+          roomsList.sort((a, b) => {
+            const orderA = a.order !== undefined ? a.order : (Number(a.id) || 999);
+            const orderB = b.order !== undefined ? b.order : (Number(b.id) || 999);
+            return orderA - orderB;
+          });
+          setRooms(roomsList);
+        }
+      },
+      (error) => {
+        console.warn("Firestore collection rooms offline, Using fallback data.", error);
         setRooms(INITIAL_ROOMS);
       }
-      
-      if (payload.customQuestions && payload.customQuestions.length > 0) {
-        setCustomQuestions(payload.customQuestions);
-      } else {
+    );
+
+    // B. Subscribe to Custom Questions
+    const unsubscribeQuestions = onSnapshot(
+      collection(db, 'customQuestions'),
+      (snapshot) => {
+        const questionsList: CustomQuestion[] = [];
+        snapshot.forEach((doc) => {
+          questionsList.push(doc.data() as CustomQuestion);
+        });
+        
+        if (questionsList.length === 0) {
+          setCustomQuestions(DEFAULT_CUSTOM_QUESTIONS);
+          if (auth.currentUser?.email === 'yhub.poti@gmail.com') {
+            DEFAULT_CUSTOM_QUESTIONS.forEach(async (q) => {
+              try {
+                await setDoc(doc(db, 'customQuestions', q.id), sanitizeForFirestore(q));
+              } catch (err) {
+                console.error("Bootstrapping error:", err);
+              }
+            });
+          }
+        } else {
+          setCustomQuestions(questionsList);
+        }
+      },
+      (error) => {
+        console.warn("Firestore customQuestions collection read failed. Using fallback.", error);
         setCustomQuestions(DEFAULT_CUSTOM_QUESTIONS);
       }
-      
-      if (payload.hubItems && payload.hubItems.length > 0) {
-        setHubItems(payload.hubItems);
-      } else {
+    );
+
+    // C. Subscribe to CMS Hub items (News, jobs, vacancies)
+    const unsubscribeHub = onSnapshot(
+      collection(db, 'hubItems'),
+      (snapshot) => {
+        const list: HubItem[] = [];
+        snapshot.forEach((doc) => {
+          list.push(doc.data() as HubItem);
+        });
+        
+        if (list.length === 0) {
+          setHubItems(INITIAL_HUB_ITEMS);
+          if (auth.currentUser?.email === 'yhub.poti@gmail.com') {
+            INITIAL_HUB_ITEMS.forEach(async (item) => {
+              try {
+                await setDoc(doc(db, 'hubItems', item.id), sanitizeForFirestore(item));
+              } catch (err) {
+                console.error("Bootstrapping error:", err);
+              }
+            });
+          }
+        } else {
+          list.sort((a, b) => {
+            const orderA = a.order !== undefined ? a.order : 0;
+            const orderB = b.order !== undefined ? b.order : 0;
+            if (orderA !== orderB) {
+              return orderA - orderB;
+            }
+            return b.date.localeCompare(a.date);
+          });
+          setHubItems(list);
+        }
+      },
+      (error) => {
+        console.warn("Firestore hubItems read failed. Using fallback.", error);
         setHubItems(INITIAL_HUB_ITEMS);
       }
-      
-      if (payload.mediaItems && payload.mediaItems.length > 0) {
-        setMediaItems(payload.mediaItems);
-      } else {
+    );
+
+    // D. Subscribe to bookingSettings
+    const unsubscribeSettings = onSnapshot(
+      doc(db, 'settings', 'bookingSettings'),
+      (snapshot) => {
+        if (snapshot.exists()) {
+          const data = snapshot.data();
+          setBookingSettings((prev) => ({
+            ...prev,
+            ...data
+          }));
+        } else {
+          if (auth.currentUser?.email === 'yhub.poti@gmail.com') {
+            setDoc(doc(db, 'settings', 'bookingSettings'), {
+              fullDayDiscount: 10,
+              multiDayDiscount: 15,
+              hubAddress: 'გიორგი წერეთლის ქუჩა #12, ფოთი, საქართველო',
+              hubEmail: 'yhub.poti@gmail.com',
+              hubPhone: '+995 599 123 456',
+              hubWorkHours: 'ორშაბათი - პარასკევი: 10:00 - 20:00',
+              invoiceTitle: 'ინვოისი მომსახურებაზე',
+              invoiceOrgName: 'ფოთის ახალგაზრდული ჰაბი',
+              invoiceBankName: 'საქართველოს ბანკი',
+              invoiceIban: 'GE90BG0000000123456789',
+              invoiceFooter: 'გმადლობთ, რომ სარგებლობთ ახალგაზრდული ჰაბის სივრცით!'
+            }).catch(err => console.error("Error setting initial settings:", err));
+          }
+        }
+      },
+      (error) => {
+        console.warn("Firestore settings read failed. Using fallback.", error);
+      }
+    );
+
+    // E. Subscribe to mediaItems
+    const unsubscribeMediaItems = onSnapshot(
+      collection(db, 'mediaItems'),
+      (snapshot) => {
+        const list: MediaItem[] = [];
+        snapshot.forEach((doc) => {
+          list.push(doc.data() as MediaItem);
+        });
+
+        if (list.length === 0) {
+          setMediaItems(INITIAL_MEDIA_ITEMS);
+          if (auth.currentUser?.email === 'yhub.poti@gmail.com') {
+            INITIAL_MEDIA_ITEMS.forEach(async (item) => {
+              try {
+                await setDoc(doc(db, 'mediaItems', item.id), sanitizeForFirestore(item));
+              } catch (err) {
+                console.error("Bootstrapping media error:", err);
+              }
+            });
+          }
+        } else {
+          list.sort((a, b) => {
+            const orderA = a.order !== undefined ? a.order : 0;
+            const orderB = b.order !== undefined ? b.order : 0;
+            if (orderA !== orderB) {
+              return orderA - orderB;
+            }
+            return b.date.localeCompare(a.date);
+          });
+          setMediaItems(list);
+        }
+      },
+      (error) => {
+        console.warn("Firestore mediaItems read failed. Using fallback.", error);
         setMediaItems(INITIAL_MEDIA_ITEMS);
       }
-      
-      if (payload.bookingSettings && Object.keys(payload.bookingSettings).length > 0) {
-        setBookingSettings(prev => ({
-          ...prev,
-          ...payload.bookingSettings
-        }));
-      }
-      
-      setBookings(payload.bookings || []);
-      setEmails(payload.emails || []);
-    } catch (err) {
-      console.warn("API load error, carrying on with fallbacks.", err);
-    } finally {
-      setLoadingData(false);
-    }
-  };
+    );
 
-  useEffect(() => {
-    if (!authLoading) {
-      loadAllData();
-    }
-  }, [user, authLoading, submittedId]);
+    return () => {
+      unsubscribeRooms();
+      unsubscribeQuestions();
+      unsubscribeHub();
+      unsubscribeSettings();
+      unsubscribeMediaItems();
+    };
+  }, [user]);
 
   // Dynamic Browser Tab / SEO Meta Tag Injection
   useEffect(() => {
@@ -329,43 +468,126 @@ export default function App() {
     }
   }, [bookingSettings.seoTitle, bookingSettings.seoDescription, bookingSettings.seoKeywords, bookingSettings.seoImage, bookingSettings.seoRobotIndex, bookingSettings.seoGoogleAnalytics]);
 
+  // 3. Admin bookings list subscription
+  useEffect(() => {
+    if (!user || user.email !== 'yhub.poti@gmail.com') {
+      setBookings([]);
+      return;
+    }
 
+    const unsubscribeBookings = onSnapshot(
+      collection(db, 'bookings'),
+      (snapshot) => {
+        const list: Booking[] = [];
+        snapshot.forEach((doc) => {
+          list.push(doc.data() as Booking);
+        });
+        list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+        setBookings(list);
+      },
+      (error) => {
+        console.warn("Failed retrieving standard bookings list:", error);
+        setBookings([]);
+      }
+    );
 
-  // Mutative Action handlers syncing live writes directly to backend API
+    return () => unsubscribeBookings();
+  }, [user]);
+
+  // 4. Live subscription to visitor's newly created guest booking
+  useEffect(() => {
+    if (!submittedId) return;
+
+    const unsubscribeSubmitted = onSnapshot(
+      doc(db, 'bookings', submittedId),
+      (snapshot) => {
+        if (snapshot.exists()) {
+          const freshData = snapshot.data() as Booking;
+          setBookings(prev => {
+            const index = prev.findIndex(b => b.id === submittedId);
+            if (index !== -1) {
+              return prev.map(b => b.id === submittedId ? freshData : b);
+            } else {
+              return [freshData, ...prev];
+            }
+          });
+        }
+      },
+      (error) => {
+        console.warn("Guest tracking subscription error:", error);
+      }
+    );
+
+    return () => unsubscribeSubmitted();
+  }, [submittedId]);
+
+  // 5. Emails log live subscription
+  useEffect(() => {
+    if (!user || user.email !== 'yhub.poti@gmail.com') {
+      setEmails([]);
+      return;
+    }
+
+    const unsubscribeEmails = onSnapshot(
+      collection(db, 'emails'),
+      (snapshot) => {
+        const list: any[] = [];
+        snapshot.forEach((doc) => {
+          list.push({ id: doc.id, ...doc.data() });
+        });
+        list.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+        setEmails(list);
+      },
+      (error) => {
+        console.warn("Failed retrieving standard emails list:", error);
+        setEmails([]);
+      }
+    );
+
+    return () => unsubscribeEmails();
+  }, [user]);
+
+  // Mutative Action handlers syncing live writes directly to Firestore
   const handleAddBooking = async (newBookingData: Omit<Booking, 'id' | 'createdAt' | 'status'>) => {
     const id = Math.random().toString(36).substr(2, 9);
+    const newBooking: Booking = {
+      ...newBookingData,
+      id,
+      status: 'pending',
+      createdAt: new Date().toISOString()
+    };
     try {
-      await apiClient.addBooking(newBookingData, id);
+      await setDoc(doc(db, 'bookings', id), sanitizeForFirestore(newBooking));
       setSubmittedId(id);
-      showNotification('ჯავშნის მოთხოვნა წარმატებით გაიგზავნა', 'success');
-      loadAllData();
+
+      // Save initial review email receipt in Firestore
+      const initialEmail = {
+        to: newBooking.email,
+        subject: `მოთხოვნა მიღებულია - ${bookingSettings.invoiceOrgName}`,
+        type: 'pending',
+        timestamp: new Date().toISOString().replace('T', ' ').substring(0, 16),
+        body: `გამარჯობა ${newBooking.firstName} ${newBooking.lastName}, \n\nთქვენი მოთხოვნა ოთახ(ებ)ზე „${newBooking.roomName}“ დარეგისტრირდა სისტემაში.\n\nდეტალები:\n- თარიღი: ${newBooking.date}\n- საათები: ${newBooking.durationHours}\n- ადამიანების რაოდენობა: ${newBooking.numPeople} კაცი\n\nჯავშანი ამჟამად არის განხილვის სტატუსში. ფოთის ახალგაზრდული ჰაბის ადმინისტრაცია უკვე განიხილავს ჯავშანს და დადასტურების შემთხვევაში ამავე ელ-ფოსტაზე გაგიზიარებთ საგადახდო ინვოისს, ხოლო უარყოფის შემთხვევაში შესაბამის შეტყობინებას.\n\nპატივისცემით,\n${bookingSettings.invoiceOrgName}.`
+      };
+      const emailId = Math.random().toString(36).substr(2, 9);
+      await setDoc(doc(db, 'emails', emailId), sanitizeForFirestore(initialEmail));
     } catch (err) {
-      console.error("Booking error:", err);
-      showNotification('ჯავშნის გაგზავნა ვერ მოხერხდა', 'error');
+      handleFirestoreError(err, OperationType.CREATE, `bookings/${id}`);
     }
   };
 
   const handleAddRoom = async (room: Room) => {
     try {
-      const token = await auth.currentUser?.getIdToken();
-      await apiClient.addRoom(room, token || '');
-      showNotification('ოთახი წარმატებით დაემატა', 'success');
-      loadAllData();
+      await setDoc(doc(db, 'rooms', room.id), sanitizeForFirestore(room));
     } catch (err) {
-      console.error("Add room error:", err);
-      showNotification('ოთახის დამატება ვერ მოხერხდა', 'error');
+      handleFirestoreError(err, OperationType.CREATE, `rooms/${room.id}`);
     }
   };
 
   const handleUpdateRoom = async (updatedRoom: Room) => {
     try {
-      const token = await auth.currentUser?.getIdToken();
-      await apiClient.updateRoom(updatedRoom, token || '');
-      showNotification('ოთახი წარმატებით განახლდა', 'success');
-      loadAllData();
+      await setDoc(doc(db, 'rooms', updatedRoom.id), sanitizeForFirestore(updatedRoom));
     } catch (err) {
-      console.error("Update room error:", err);
-      showNotification('ოთახის განახლება ვერ მოხერხდა', 'error');
+      handleFirestoreError(err, OperationType.UPDATE, `rooms/${updatedRoom.id}`);
     }
   };
 
@@ -375,12 +597,10 @@ export default function App() {
       'ნამდვილად გსურთ ამ ოთახის წაშლა?',
       async () => {
         try {
-          const token = await auth.currentUser?.getIdToken();
-          await apiClient.deleteRoom(id, token || '');
+          await deleteDoc(doc(db, 'rooms', id));
           showNotification('ოთახი წარმატებით წაიშალა', 'success');
-          loadAllData();
         } catch (err) {
-          console.error("Delete room error:", err);
+          handleFirestoreError(err, OperationType.DELETE, `rooms/${id}`);
           showNotification('ოთახის წაშლა ვერ მოხერხდა', 'error');
         }
       }
@@ -393,12 +613,10 @@ export default function App() {
       'ნამდვილად გსურთ ამ ჯავშნის სამუდამოდ წაშლა? (ეს ქმედება შეუქცევადია)',
       async () => {
         try {
-          const token = await auth.currentUser?.getIdToken();
-          await apiClient.deleteBooking(id, token || '');
+          await deleteDoc(doc(db, 'bookings', id));
           showNotification('ჯავშანი წარმატებით წაიშალა', 'success');
-          loadAllData();
         } catch (err) {
-          console.error("Delete booking error:", err);
+          handleFirestoreError(err, OperationType.DELETE, `bookings/${id}`);
           showNotification('ჯავშნის წაშლა ვერ მოხერხდა', 'error');
         }
       }
@@ -421,12 +639,14 @@ export default function App() {
     const itemA = { ...currentRooms[index] };
     const itemB = { ...currentRooms[targetIndex] };
 
+    // Set orders
     const indexOrder = itemA.order !== undefined ? itemA.order : index;
     const targetOrder = itemB.order !== undefined ? itemB.order : targetIndex;
 
     itemA.order = targetOrder;
     itemB.order = indexOrder;
 
+    // ensure no identical orders can conflict
     if (itemA.order === itemB.order) {
       if (direction === 'up') {
         itemA.order = index - 1;
@@ -438,63 +658,88 @@ export default function App() {
     }
 
     try {
-      const token = await auth.currentUser?.getIdToken();
-      await apiClient.updateRoom(itemA, token || '');
-      await apiClient.updateRoom(itemB, token || '');
+      await setDoc(doc(db, 'rooms', itemA.id), sanitizeForFirestore(itemA));
+      await setDoc(doc(db, 'rooms', itemB.id), sanitizeForFirestore(itemB));
       showNotification('ოთახების თანამიმდევრობა განახლდა', 'success');
-      loadAllData();
     } catch (err) {
-      console.error("Reorder room error:", err);
+      handleFirestoreError(err, OperationType.UPDATE, `rooms/${itemA.id}`);
       showNotification('თანამიმდევრობის შენახვა ვერ მოხერხდა', 'error');
     }
   };
 
   const handleApproveBooking = async (id: string, invoiceNum: string) => {
     try {
-      const token = await auth.currentUser?.getIdToken();
       const existing = bookings.find(b => b.id === id);
-      await apiClient.approveBooking(id, invoiceNum, token || '', existing, bookingSettings);
+      if (!existing) return;
+      const updated: Booking = {
+        ...existing,
+        status: 'approved',
+        invoiceNumber: invoiceNum
+      };
+      await setDoc(doc(db, 'bookings', id), sanitizeForFirestore(updated));
       showNotification('ჯავშანი წარმატებით დადასტურდა და ინვოისი გაიგზავნა', 'success');
-      loadAllData();
+
+      // Save approval with invoice email in Firestore
+      const approveEmail = {
+        to: updated.email,
+        subject: `თანხმობა ოთახის დაჯავშნაზე [${updated.roomName}] - ${bookingSettings.invoiceOrgName}`,
+        type: 'approved',
+        timestamp: new Date().toISOString().replace('T', ' ').substring(0, 16),
+        body: `გამარჯობა ${updated.firstName} ${updated.lastName}, \n\nმოხარულები ვართ გაცნობოთ, რომ თქვენი მოთხოვნა „${updated.roomName}“-ს დაჯავშნაზე (${updated.date}, ${updated.durationHours}) წარმატებით დადასტურდა! \n\nჯავშნის კოდი: RSV-${updated.id}.\nსაერთო საფასური შეადგენს: ₾${updated.totalPrice}.00.\n\nმიბმულია საგადახდო ინვოისი #${invoiceNum}. გთხოვთ გადაიხადოთ მითითებულ საბანკო ანგარიშზე ჰაბში მოსვლამდე.\n\nსაბანკო რეკვიზიტები:\n- მიმღები: ${bookingSettings.invoiceOrgName}\n- ბანკი: ${bookingSettings.invoiceBankName}\n- ანგარიში (IBAN): ${bookingSettings.invoiceIban}\n\nპატივისცემით, \n${bookingSettings.invoiceOrgName}.`,
+        invoiceNum: invoiceNum
+      };
+      const emailId = Math.random().toString(36).substr(2, 9);
+      await setDoc(doc(db, 'emails', emailId), sanitizeForFirestore(approveEmail));
     } catch (err) {
-      console.error("Approve booking error:", err);
+      handleFirestoreError(err, OperationType.UPDATE, `bookings/${id}`);
       showNotification('შეცდომა ჯავშნის დადასტურებისას', 'error');
     }
   };
 
   const handleRejectBooking = async (id: string, reason: string) => {
     try {
-      const token = await auth.currentUser?.getIdToken();
       const existing = bookings.find(b => b.id === id);
-      await apiClient.rejectBooking(id, reason, token || '', existing, bookingSettings);
+      if (!existing) return;
+      const updated: Booking = {
+        ...existing,
+        status: 'rejected',
+        adminNotes: reason
+      };
+      await setDoc(doc(db, 'bookings', id), sanitizeForFirestore(updated));
       showNotification('ჯავშანი უარყოფილია', 'info');
-      loadAllData();
+
+      // Save rejection email in Firestore
+      const rejectEmail = {
+        to: updated.email,
+        subject: `უარყოფა ოთახის დაჯავშნაზე - ${bookingSettings.invoiceOrgName}`,
+        type: 'rejected',
+        timestamp: new Date().toISOString().replace('T', ' ').substring(0, 16),
+        body: `გამარჯობა ${updated.firstName} ${updated.lastName}, \n\nსამწუხაროდ, თქვენი მოთხოვნა „${updated.roomName}“-ს დაჯავშნაზე (${updated.date}, ${updated.durationHours}) ამ ეტაპზე ვერ დაკმაყოფილდა.\n\nუარყოფის მიზეზი:\n"${reason}"\n\nსხვა ალტერნატიული დროის ასარჩევად გთხოვთ ეწვიოთ ჩვენს პორტალს ან დაგვიკავშირდეთ ნომერზე: ${bookingSettings.hubPhone}.\n\nპატივისცემით, \n${bookingSettings.invoiceOrgName} ადმინისტრაცია.`
+      };
+      const emailId = Math.random().toString(36).substr(2, 9);
+      await setDoc(doc(db, 'emails', emailId), sanitizeForFirestore(rejectEmail));
     } catch (err) {
-      console.error("Reject booking error:", err);
+      handleFirestoreError(err, OperationType.UPDATE, `bookings/${id}`);
       showNotification('შეცდომა ჯავშნის უარყოფისას', 'error');
     }
   };
 
   const handleDeleteEmail = async (id: string) => {
     try {
-      const token = await auth.currentUser?.getIdToken();
-      await apiClient.deleteEmail(id, token || '');
+      await deleteDoc(doc(db, 'emails', id));
       showNotification('წერილი წარმატებით წაიშალა', 'success');
-      loadAllData();
     } catch (err) {
-      console.error("Delete email error:", err);
+      handleFirestoreError(err, OperationType.DELETE, `emails/${id}`);
       showNotification('წერილის წაშლა ვერ მოხერხდა', 'error');
     }
   };
 
   const handleAddQuestion = async (q: CustomQuestion) => {
     try {
-      const token = await auth.currentUser?.getIdToken();
-      await apiClient.addQuestion(q, token || '');
+      await setDoc(doc(db, 'customQuestions', q.id), sanitizeForFirestore(q));
       showNotification('კითხვა წარმატებით დაემატა', 'success');
-      loadAllData();
     } catch (err) {
-      console.error("Add question error:", err);
+      handleFirestoreError(err, OperationType.CREATE, `customQuestions/${q.id}`);
       showNotification('კითხვის დამატება ვერ მოხერხდა', 'error');
     }
   };
@@ -505,12 +750,10 @@ export default function App() {
       'დარწმუნებული ხართ, რომ გსურთ კითხვის წაშლა?',
       async () => {
         try {
-          const token = await auth.currentUser?.getIdToken();
-          await apiClient.deleteQuestion(id, token || '');
+          await deleteDoc(doc(db, 'customQuestions', id));
           showNotification('კითხვა წარმატებით წაიშალა', 'success');
-          loadAllData();
         } catch (err) {
-          console.error("Delete question error:", err);
+          handleFirestoreError(err, OperationType.DELETE, `customQuestions/${id}`);
           showNotification('კითხვის წაშლა ვერ მოხერხდა', 'error');
         }
       }
@@ -519,24 +762,20 @@ export default function App() {
 
   const handleAddHubItem = async (item: HubItem) => {
     try {
-      const token = await auth.currentUser?.getIdToken();
-      await apiClient.addHubItem(item, token || '');
+      await setDoc(doc(db, 'hubItems', item.id), sanitizeForFirestore(item));
       showNotification('პოსტი წარმატებით დაემატა', 'success');
-      loadAllData();
     } catch (err) {
-      console.error("Add post error:", err);
+      handleFirestoreError(err, OperationType.CREATE, `hubItems/${item.id}`);
       showNotification('პოსტის დამატება ვერ მოხერხდა', 'error');
     }
   };
 
   const handleUpdateHubItem = async (item: HubItem) => {
     try {
-      const token = await auth.currentUser?.getIdToken();
-      await apiClient.updateHubItem(item, token || '');
+      await setDoc(doc(db, 'hubItems', item.id), sanitizeForFirestore(item));
       showNotification('პოსტი წარმატებით განახლდა', 'success');
-      loadAllData();
     } catch (err) {
-      console.error("Update post error:", err);
+      handleFirestoreError(err, OperationType.UPDATE, `hubItems/${item.id}`);
       showNotification('პოსტის განახლება ვერ მოხერხდა', 'error');
     }
   };
@@ -547,12 +786,10 @@ export default function App() {
       'ნამდვილად გსურთ პოსტის წაშლა?',
       async () => {
         try {
-          const token = await auth.currentUser?.getIdToken();
-          await apiClient.deleteHubItem(id, token || '');
+          await deleteDoc(doc(db, 'hubItems', id));
           showNotification('პოსტი წარმატებით წაიშალა', 'success');
-          loadAllData();
         } catch (err) {
-          console.error("Delete post error:", err);
+          handleFirestoreError(err, OperationType.DELETE, `hubItems/${id}`);
           showNotification('პოსტის წაშლა ვერ მოხერხდა', 'error');
         }
       }
@@ -578,6 +815,7 @@ export default function App() {
     const itemA = { ...currentItems[index] };
     const itemB = { ...currentItems[targetIndex] };
 
+    // Initial order setups if undefined
     if (itemA.order === undefined) itemA.order = index;
     if (itemB.order === undefined) itemB.order = targetIndex;
 
@@ -585,6 +823,7 @@ export default function App() {
     itemA.order = itemB.order;
     itemB.order = tempOrder;
 
+    // ensure no identical orders can conflict
     if (itemA.order === itemB.order) {
       if (direction === 'up') {
         itemA.order = index - 1;
@@ -596,37 +835,31 @@ export default function App() {
     }
 
     try {
-      const token = await auth.currentUser?.getIdToken();
-      await apiClient.updateHubItem(itemA, token || '');
-      await apiClient.updateHubItem(itemB, token || '');
+      await setDoc(doc(db, 'hubItems', itemA.id), sanitizeForFirestore(itemA));
+      await setDoc(doc(db, 'hubItems', itemB.id), sanitizeForFirestore(itemB));
       showNotification('პოსტების თანამიმდევრობა განახლდა', 'success');
-      loadAllData();
     } catch (err) {
-      console.error("Reorder post error:", err);
+      handleFirestoreError(err, OperationType.UPDATE, `hubItems/${itemA.id}`);
       showNotification('თანამიმდევრობის შენახვა ვერ მოხერხდა', 'error');
     }
   };
 
   const handleAddMediaItem = async (item: MediaItem) => {
     try {
-      const token = await auth.currentUser?.getIdToken();
-      await apiClient.addMediaItem(item, token || '');
+      await setDoc(doc(db, 'mediaItems', item.id), sanitizeForFirestore(item));
       showNotification('მედია წარმატებით დაემატა', 'success');
-      loadAllData();
     } catch (err) {
-      console.error("Add media error:", err);
+      handleFirestoreError(err, OperationType.CREATE, `mediaItems/${item.id}`);
       showNotification('მედიის დამატება ვერ მოხერხდა', 'error');
     }
   };
 
   const handleUpdateMediaItem = async (item: MediaItem) => {
     try {
-      const token = await auth.currentUser?.getIdToken();
-      await apiClient.updateMediaItem(item, token || '');
+      await setDoc(doc(db, 'mediaItems', item.id), sanitizeForFirestore(item));
       showNotification('მედია წარმატებით განახლდა', 'success');
-      loadAllData();
     } catch (err) {
-      console.error("Update media error:", err);
+      handleFirestoreError(err, OperationType.UPDATE, `mediaItems/${item.id}`);
       showNotification('მედიის განახლება ვერ მოხერხდა', 'error');
     }
   };
@@ -637,12 +870,10 @@ export default function App() {
       'ნამდვილად გსურთ მედია ფაილის წაშლა გალერეიდან?',
       async () => {
         try {
-          const token = await auth.currentUser?.getIdToken();
-          await apiClient.deleteMediaItem(id, token || '');
+          await deleteDoc(doc(db, 'mediaItems', id));
           showNotification('მედია წარმატებით წაიშალა', 'success');
-          loadAllData();
         } catch (err) {
-          console.error("Delete media error:", err);
+          handleFirestoreError(err, OperationType.DELETE, `mediaItems/${id}`);
           showNotification('მედიის წაშლა ვერ მოხერხდა', 'error');
         }
       }
@@ -651,12 +882,10 @@ export default function App() {
 
   const handleUpdateSettings = async (settings: any) => {
     try {
-      const token = await auth.currentUser?.getIdToken();
-      await apiClient.updateSettings(settings, token || '');
+      await setDoc(doc(db, 'settings', 'bookingSettings'), sanitizeForFirestore(settings));
       showNotification('პარამეტრები წარმატებით შეინახა', 'success');
-      loadAllData();
     } catch (err) {
-      console.error("Update settings error:", err);
+      handleFirestoreError(err, OperationType.UPDATE, 'settings/bookingSettings');
       showNotification('პარამეტრების შენახვა ვერ მოხერხდა', 'error');
     }
   };
