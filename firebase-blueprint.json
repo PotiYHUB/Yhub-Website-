@@ -35,6 +35,7 @@
         "answers": { "type": "object", "description": "JSON responses to custom questions" },
         "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
         "invoiceNumber": { "type": "string" },
+        "invoiceDate": { "type": "string" },
         "adminNotes": { "type": "string" },
         "createdAt": { "type": "string", "format": "date-time" }
       },

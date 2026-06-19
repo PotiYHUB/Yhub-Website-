@@ -73,7 +73,7 @@ service cloud.firestore {
 
     function isValidBooking(data) {
       return data.keys().hasAll(['id', 'roomId', 'roomName', 'date', 'durationHours', 'numPeople', 'totalPrice', 'firstName', 'lastName', 'email', 'phone', 'status', 'createdAt', 'answers']) &&
-             data.keys().size() >= 14 && data.keys().size() <= 17 &&
+             data.keys().size() >= 14 && data.keys().size() <= 18 &&
              data.id is string && data.id.size() <= 128 &&
              data.roomId is string && data.roomId.size() <= 128 &&
              data.roomName is string && data.roomName.size() <= 256 &&
@@ -90,6 +90,7 @@ service cloud.firestore {
              data.createdAt is string && data.createdAt.size() <= 128 &&
              (!('organization' in data) || (data.organization is string && data.organization.size() <= 256)) &&
              (!('invoiceNumber' in data) || (data.invoiceNumber is string && data.invoiceNumber.size() <= 128)) &&
+             (!('invoiceDate' in data) || (data.invoiceDate is string && data.invoiceDate.size() <= 128)) &&
              (!('adminNotes' in data) || (data.adminNotes is string && data.adminNotes.size() <= 1000));
     }
 

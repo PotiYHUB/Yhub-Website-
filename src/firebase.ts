@@ -4,9 +4,9 @@
  */
 
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
-import { getStorage } from 'firebase/storage';
+import { getAuth, GoogleAuthProvider, signInWithPopup, connectAuthEmulator } from 'firebase/auth';
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, getDocFromServer, connectFirestoreEmulator } from 'firebase/firestore';
+import { getStorage, connectStorageEmulator } from 'firebase/storage';
 import firebaseConfig from '../firebase-applet-config.json';
 
 // Initialize the core Firebase App
@@ -30,10 +30,33 @@ const targetDatabaseId = (import.meta as any).env.VITE_FIRESTORE_DATABASE_ID !==
       ? (firebaseConfig.firestoreDatabaseId || undefined)
       : undefined);
 
-// Initialize Firestore and Auth Services
-export const db = getFirestore(app, targetDatabaseId);
+// Initialize Firestore and Auth Services with IndexedDB multi-tab caching
+export const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({
+    tabManager: persistentMultipleTabManager()
+  })
+}, targetDatabaseId);
 export const auth = getAuth(app);
 export const storage = getStorage(app);
+
+// Connect Local emulators in development if VITE_USE_FIREBASE_EMULATOR is enabled
+const useEmulator = (import.meta as any).env.VITE_USE_FIREBASE_EMULATOR === 'true';
+
+if (useEmulator) {
+  try {
+    // Avoid double connections during HMR by checking if already connected
+    if (!(globalThis as any)._firebase_emulators_connected) {
+      connectFirestoreEmulator(db, 'localhost', 8080);
+      connectAuthEmulator(auth, 'http://localhost:9099', { disableWarnings: true });
+      connectStorageEmulator(storage, 'localhost', 9199);
+      (globalThis as any)._firebase_emulators_connected = true;
+      console.info("🔥 Firebase Local Emulators successfully connected.");
+    }
+  } catch (err) {
+    console.warn("⚠️ Error connecting to Firebase Local Emulators:", err);
+  }
+}
+
 export const googleProvider = new GoogleAuthProvider();
 
 // Standard login popup method
@@ -128,5 +151,3 @@ async function testConnection() {
     }
   }
 }
-
-testConnection();

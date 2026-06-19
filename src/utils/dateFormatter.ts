@@ -1,57 +1,30 @@
 /**
- * @license
- * SPDX-License-Identifier: Apache-2.0
+ * Global Date Formatting Utility
+ * Standardizes other date strings to DD.MM.YYYY (Day-Month-Year) format.
+ * Keeps raw database dates (YYYY-MM-DD) untouched for correct query operations and sorting,
+ * but presents beautiful local formats to endpoints/frontend views.
  */
 
-/**
- * Formats a date string from YYYY-MM-DD format to Day-Month-Year (DD-MM-YYYY) format.
- * Examples:
- *   "2026-06-17" -> "17-06-2026"
- *   "2026-06-17 12:30" -> "17-06-2026 12:30"
- *   "2026-06-17T12:30:00Z" -> "17-06-2026 12:30"
- *   "2026-06-17, 2026-06-18" -> "17-06-2026, 18-06-2026"
- */
-export function formatToDayMonthYear(dateStr: string | undefined | null, includeTime: boolean = false): string {
+export function formatDisplayDate(dateStr: string | undefined | null): string {
   if (!dateStr) return '';
-
-  // If there are multiple comma-separated dates
+  
+  // If it's a comma-separated list of dates (like in bookings)
   if (dateStr.includes(',')) {
-    return dateStr
-      .split(',')
-      .map(d => formatToDayMonthYear(d.trim(), includeTime))
-      .join(', ');
+    return dateStr.split(',').map(d => formatDisplayDate(d.trim())).join(', ');
   }
 
-  // Handle ISO string contains T
-  let normalized = dateStr;
-  if (dateStr.includes('T')) {
-    normalized = dateStr.replace('T', ' ').split('.')[0];
-  }
-
-  // Extract date part (first 10 characters: YYYY-MM-DD or custom)
-  const datePart = normalized.substring(0, 10);
-  const remainder = includeTime ? normalized.substring(10) : '';
-
-  const regex = /^(\d{4})[-/](\d{2})[-/](\d{2})$/;
-  const match = datePart.match(regex);
-
-  if (match) {
-    const [, lYear, lMonth, lDay] = match;
-    // Strip trailing seconds if present (e.g., " 12:30:00" -> " 12:30")
-    let cleanedRemainder = remainder;
-    if (includeTime && remainder.match(/^\s\d{2}:\d{2}:\d{2}$/)) {
-      cleanedRemainder = remainder.substring(0, 6);
+  // Check if it matches YYYY-MM-DD (optionally followed by time or T...)
+  // E.g., "2026-06-18" or "2026-06-18T09:21:41Z" or "2026-06-18 09:21:41"
+  const isoMatch = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?/);
+  if (isoMatch) {
+    const [_, year, month, day, hours, minutes] = isoMatch;
+    let formatted = `${day}.${month}.${year}`;
+    if (hours && minutes) {
+      formatted += ` ${hours}:${minutes}`;
     }
-    return `${lDay}-${lMonth}-${lYear}${cleanedRemainder}`;
+    return formatted;
   }
 
-  // Fallback check: if dateStr resembles "YYYY-MM-DD HH:MM:SS" or similar, extract the date part
-  const dateRegex = /^(\d{4})[-/](\d{2})[-/](\d{2})/;
-  const dateMatch = dateStr.match(dateRegex);
-  if (dateMatch) {
-    const [, lYear, lMonth, lDay] = dateMatch;
-    return `${lDay}-${lMonth}-${lYear}`;
-  }
-
+  // Fallback for already correct formats or other strings
   return dateStr;
 }

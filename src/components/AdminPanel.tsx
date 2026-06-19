@@ -15,7 +15,7 @@ import {
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage } from '../firebase';
 import { optimizeImageForWeb, blobToBase64 } from '../utils/imageOptimizer';
-import { formatToDayMonthYear } from '../utils/dateFormatter';
+import { formatDisplayDate } from '../utils/dateFormatter';
 // @ts-ignore
 import logoImg from '../assets/images/small-logo.png';
 
@@ -108,6 +108,54 @@ export default function AdminPanel({
   // Custom interactive modulations
   const [selectedInvoiceBooking, setSelectedInvoiceBooking] = useState<Booking | null>(null);
 
+  const getInvoiceQtyDisplay = (booking: Booking) => {
+    if (!booking.durationHours) return "—";
+    
+    // count number of days
+    const daysCount = booking.date ? booking.date.split(',').map(d => d.trim()).filter(Boolean).length : 1;
+    
+    if (booking.durationHours.includes("მთელი დღე")) {
+      return daysCount > 1 ? `${daysCount} დღე` : "მთელი დღე";
+    }
+    
+    // Otherwise, parse time range
+    const parts = booking.durationHours.split('-');
+    if (parts.length === 2) {
+      const start = parts[0].trim();
+      const end = parts[1].trim();
+      const [startH, startM] = start.split(':').map(Number);
+      const [endH, endM] = end.split(':').map(Number);
+      if (!isNaN(startH) && !isNaN(endH)) {
+        const startMin = startH * 60 + (startM || 0);
+        const endMin = endH * 60 + (endM || 0);
+        const diffHrs = Math.max(0.5, (endMin - startMin) / 60);
+        const totalHours = Math.ceil(diffHrs) * daysCount;
+        return `${totalHours} სთ`;
+      }
+    }
+    
+    return booking.durationHours;
+  };
+
+  const getInvoiceRateDisplay = (booking: Booking) => {
+    if (!booking.roomId) return 15;
+    const ids = booking.roomId.split(',').map(id => id.trim()).filter(Boolean);
+    let totalRate = 0;
+    
+    ids.forEach(id => {
+      const r = rooms.find(room => room.id === id);
+      if (r) {
+        if (booking.durationHours?.includes("მთელი დღე")) {
+          totalRate += (r.dayPrice || Math.round(r.price * 8));
+        } else {
+          totalRate += r.price;
+        }
+      }
+    });
+    
+    return totalRate || 15;
+  };
+
   const handlePrintInvoice = () => {
     window.print();
   };
@@ -120,15 +168,19 @@ export default function AdminPanel({
     // Header
     content += "ფოთის ახალგაზრდული ჰაბი | YOUTH HUB POTI\n";
     content += `ანგარიშსწორების დოკუმენტი / ინვოისი: ,"${bookingSettings.invoiceTitle || 'ინვოისი მომსახურებაზე'}"\n`;
-    content += `ინვოისი #: ,${selectedInvoiceBooking.invoiceNumber || 'INV-2026-000'}\n`;
-    content += `თარიღი: ,${new Date().toISOString().split('T')[0]}\n\n`;
+    content += `ინვოისი #: ,${selectedInvoiceBooking.invoiceNumber || 'INV-2026-0001'}\n`;
+    content += `თარიღი: ,${selectedInvoiceBooking.invoiceDate || selectedInvoiceBooking.createdAt.substring(0, 10).split('-').reverse().join('.') || new Date().toLocaleDateString('ka-GE')}\n\n`;
     
     // Vendor info
     content += "გამცემი ორგანიზაცია:\n";
     content += `დასახელება: ,"${bookingSettings.invoiceOrgName || 'ფოთის ახალგაზრდული ჰაბი'}"\n`;
     content += `ელ-ფოსტა: ,${bookingSettings.hubEmail || 'yhub.poti@gmail.com'}\n`;
     content += `ბანკი: ,"${bookingSettings.invoiceBankName || 'საქართველოს ბანკი'}"\n`;
-    content += `ანგარიშის ნომერი (IBAN): ,${bookingSettings.invoiceIban || 'GE90BG0000000123456789'}\n\n`;
+    content += `ანგარიშის ნომერი (IBAN): ,${bookingSettings.invoiceIban || 'GE90BG0000000123456789'}\n`;
+    if (bookingSettings.invoiceTreasuryCode) {
+      content += `სახაზინო კოდი: ,${bookingSettings.invoiceTreasuryCode}\n`;
+    }
+    content += "\n";
     
     // Buyer info
     content += "დამკვეთი / გადამხდელი:\n";
@@ -142,10 +194,10 @@ export default function AdminPanel({
     // Table Details
     content += "მომსახურების აღწერა,ჯავშნის თარიღი,საათები,ტარიფი (₾),ჯამური ღირებულება (₾)\n";
     
-    const baseHourRate = rooms.find(r => r.id === selectedInvoiceBooking.roomId)?.price || 15;
-    const hoursCount = Math.round(selectedInvoiceBooking.totalPrice / baseHourRate);
+    const qtyDisplay = getInvoiceQtyDisplay(selectedInvoiceBooking);
+    const rateDisplay = getInvoiceRateDisplay(selectedInvoiceBooking);
     
-    content += `"${selectedInvoiceBooking.roomName.replace(/"/g, '""')} - დარბაზის/სივრცის დაჯავშნა (დეტალები: ${selectedInvoiceBooking.durationHours.replace(/"/g, '""')}, ${selectedInvoiceBooking.numPeople} კაცი)",${selectedInvoiceBooking.date},${hoursCount},${baseHourRate},${selectedInvoiceBooking.totalPrice}\n\n`;
+    content += `"${selectedInvoiceBooking.roomName.replace(/"/g, '""')} - დარბაზის/სივრცის დაჯავშნა (დეტალები: ${selectedInvoiceBooking.durationHours.replace(/"/g, '""')}, ${selectedInvoiceBooking.numPeople} კაცი)",${selectedInvoiceBooking.date},"${qtyDisplay}",${rateDisplay},${selectedInvoiceBooking.totalPrice}\n\n`;
     
     // Totals
     content += `,,ლიმიტი/ჯამი:,,₾${selectedInvoiceBooking.totalPrice}.00 GEL\n`;
@@ -448,7 +500,25 @@ export default function AdminPanel({
 
   // Handle Approve booking
   const handleApprove = (booking: Booking) => {
-    const invNum = `INV-2026-0${10 + bookings.filter(b => b.status === 'approved').length}`;
+    const approvedBookingsWithInvoice = bookings.filter(b => b.invoiceNumber);
+    let maxVal = 0;
+    
+    approvedBookingsWithInvoice.forEach(b => {
+      if (b.invoiceNumber) {
+        const parts = b.invoiceNumber.split('-');
+        const lastPart = parts[parts.length - 1]; // e.g., "0001" or "010"
+        const num = parseInt(lastPart, 10);
+        if (!isNaN(num) && num > maxVal) {
+          maxVal = num;
+        }
+      }
+    });
+    
+    const nextVal = maxVal + 1;
+    const padded = String(nextVal).padStart(4, '0'); // start with "0001", then "0002", etc.
+    const year = new Date().getFullYear();
+    const invNum = `INV-${year}-${padded}`;
+    
     onApproveBooking(booking.id, invNum);
   };
 
@@ -1024,7 +1094,7 @@ export default function AdminPanel({
                           <div>
                             <span className="block text-[10px] text-slate-400 uppercase font-black tracking-wider">თარიღი & დრო</span>
                             <span className="font-medium text-slate-800 flex items-center mt-0.5">
-                              <Calendar className="h-3.5 w-3.5 mr-1 text-slate-450" /> {formatToDayMonthYear(b.date)}
+                              <Calendar className="h-3.5 w-3.5 mr-1 text-slate-450" /> {b.date}
                             </span>
                             <span className="font-mono text-xs text-slate-600 flex items-center mt-0.5">
                               <Clock className="h-3.5 w-3.5 mr-1 text-slate-455" /> {b.durationHours}
@@ -2394,7 +2464,7 @@ export default function AdminPanel({
                             
                             {/* Meta flags */}
                             <div className="absolute top-2.5 left-2.5 bg-slate-900/90 text-white text-[10px] font-bold font-mono px-2 py-1 rounded-md">
-                              {formatToDayMonthYear(item.date)}
+                              {item.date}
                             </div>
 
                             {item.order !== undefined && (
@@ -2527,6 +2597,7 @@ export default function AdminPanel({
                   const invoiceOrgName = formData.get('invoiceOrgName') as string;
                   const invoiceBankName = formData.get('invoiceBankName') as string;
                   const invoiceIban = formData.get('invoiceIban') as string;
+                  const invoiceTreasuryCode = formData.get('invoiceTreasuryCode') as string;
                   const invoiceFooter = formData.get('invoiceFooter') as string;
 
                   const invoiceShowLogo = formData.get('invoiceShowLogo') === 'on';
@@ -2560,6 +2631,7 @@ export default function AdminPanel({
                     invoiceOrgName,
                     invoiceBankName,
                     invoiceIban,
+                    invoiceTreasuryCode,
                     invoiceFooter,
                     invoiceShowLogo,
                     invoiceShowStamp,
@@ -2748,6 +2820,17 @@ export default function AdminPanel({
                           defaultValue={bookingSettings?.invoiceIban ?? 'GE90BG0000000123456789'}
                           className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-sans focus:outline-hidden"
                           required
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-500 mb-1">სახაზინო კოდი</label>
+                        <input
+                          type="text"
+                          name="invoiceTreasuryCode"
+                          defaultValue={bookingSettings?.invoiceTreasuryCode ?? '300773191'}
+                          placeholder="მაგ: 300773191"
+                          className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-sans focus:outline-hidden"
                         />
                       </div>
                     </div>
@@ -3502,7 +3585,7 @@ export default function AdminPanel({
                             {b.roomName}
                           </td>
                           <td className="px-3 border-r border-[#e1e1e1] font-mono text-[10.5px] text-slate-600 truncate">
-                            {formatToDayMonthYear(b.date)}
+                            {b.date}
                           </td>
                           <td className="px-3 border-r border-[#e1e1e1] font-sans text-[11px] text-slate-500 truncate">
                             {b.durationHours}
@@ -3688,9 +3771,9 @@ export default function AdminPanel({
                         {bookingSettings.invoiceTitle || 'ინვოისი მომსახურებაზე'}
                       </h3>
                       <p className="text-rose-600 font-mono text-xs font-semibold mt-1">
-                        ინვოისი #: {selectedInvoiceBooking.invoiceNumber || 'INV-2026-000'}
+                        ინვოისი #: {selectedInvoiceBooking.invoiceNumber || 'INV-2026-0001'}
                       </p>
-                      <p className="text-slate-400 text-[10px] mt-0.5">თარიღი: {new Date().toISOString().split('T')[0]}</p>
+                      <p className="text-slate-400 text-[10px] mt-0.5">თარიღი: {selectedInvoiceBooking.invoiceDate || selectedInvoiceBooking.createdAt.substring(0, 10).split('-').reverse().join('.') || new Date().toLocaleDateString('ka-GE')}</p>
                     </div>
                   </div>
 
@@ -3717,11 +3800,16 @@ export default function AdminPanel({
                     <span className="block text-slate-500 text-xs">{selectedInvoiceBooking.email}</span>
                   </div>
 
-                  <div className="text-right">
+                  <div className="text-right font-sans">
                     <span className="block text-[10px] text-slate-400 uppercase font-bold tracking-wider mb-1.5 font-sans">გადახდის პირობა:</span>
                     <span className="block font-semibold text-slate-800">უნაღდო ანგარიშსწორება</span>
                     <span className="block text-slate-500">ბანკი: <b>{bookingSettings.invoiceBankName || 'საქართველოს ბანკი'}</b></span>
                     <span className="block font-mono text-xs text-slate-600">ანგარიში (IBAN): {bookingSettings.invoiceIban || 'GE90BG0000000123456789'}</span>
+                    {bookingSettings.invoiceTreasuryCode && (
+                      <span className="block text-slate-500 text-xs">
+                        სახაზინო კოდი: <span className="font-mono">{bookingSettings.invoiceTreasuryCode}</span>
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -3739,17 +3827,17 @@ export default function AdminPanel({
                     </thead>
                     <tbody>
                       <tr className="border-b border-slate-100 font-medium text-slate-800">
-                        <td className="py-3 px-3">
+                        <td className="py-3 px-3 block sm:table-cell">
                           {selectedInvoiceBooking.roomName}
                           <span className="block text-[10px] text-slate-400 font-sans mt-0.5">
                             ჯავშანი {selectedInvoiceBooking.durationHours} | დარეგისტრირებულია: {selectedInvoiceBooking.numPeople} კაცზე
                           </span>
                         </td>
-                        <td className="py-3 px-3 text-center font-mono text-xs">{formatToDayMonthYear(selectedInvoiceBooking.date)}</td>
+                        <td className="py-3 px-3 text-center font-mono text-xs">{selectedInvoiceBooking.date}</td>
                         <td className="py-3 px-3 text-center font-mono">
-                          {Math.round(selectedInvoiceBooking.totalPrice / (rooms.find(r => r.id === selectedInvoiceBooking.roomId)?.price || 15))}
+                          {getInvoiceQtyDisplay(selectedInvoiceBooking)}
                         </td>
-                        <td className="py-3 px-3 text-right font-mono">₾{rooms.find(r => r.id === selectedInvoiceBooking.roomId)?.price || 15}</td>
+                        <td className="py-3 px-3 text-right font-mono">₾{getInvoiceRateDisplay(selectedInvoiceBooking)}</td>
                         <td className="py-3 px-3 text-right font-mono font-bold">₾{selectedInvoiceBooking.totalPrice}</td>
                       </tr>
                     </tbody>

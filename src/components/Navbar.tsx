@@ -73,7 +73,7 @@ export default function Navbar({
                 <a
                   key={link.id}
                   id={`nav-link-${link.id}`}
-                  href={link.id === 'news' ? '/' : `/${link.id}`}
+                  href={`/${link.id}`}
                   onClick={(e) => {
                     e.preventDefault();
                     handleNavClick(link.id);
@@ -129,7 +129,7 @@ export default function Navbar({
               <a
                 key={link.id}
                 id={`mobile-nav-link-${link.id}`}
-                href={link.id === 'news' ? '/' : `/${link.id}`}
+                href={`/${link.id}`}
                 onClick={(e) => {
                   e.preventDefault();
                   handleNavClick(link.id);

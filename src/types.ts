@@ -73,6 +73,7 @@ export interface Booking {
   answers: Record<string, string>; // answers to custom admin questions
   status: 'pending' | 'approved' | 'rejected';
   invoiceNumber?: string;
+  invoiceDate?: string;
   adminNotes?: string;
   createdAt: string;
 }
