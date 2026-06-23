@@ -8,7 +8,7 @@
         "id": { "type": "string", "description": "Unique identifier of the room" },
         "name": { "type": "string", "description": "Georgian name of the room" },
         "description": { "type": "string", "description": "Detailed description of the room and equipment" },
-        "capacity": { "type": "integer", "description": "Maximum number of attendees" },
+        "capacity": { "type": ["string", "integer"], "description": "Maximum number of attendees" },
         "price": { "type": "number", "description": "Fixed price in GEL or 0 if free" },
         "imageUrl": { "type": "string", "description": "Unsplash or asset URL of the room cover" },
         "features": { "type": "array", "description": "List of key features or equipments" }

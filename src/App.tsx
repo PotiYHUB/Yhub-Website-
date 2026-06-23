@@ -146,7 +146,9 @@ export default function App() {
     seoKeywords: 'ფოთი, ახალგაზრდობა, ჰაბი, ტრენინგი, კარიერა, სივრცე',
     seoImage: 'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?auto=format&fit=crop&w=1200&h=630&q=80',
     seoGoogleAnalytics: 'G-XXXXXXXXXX',
-    seoRobotIndex: true
+    seoRobotIndex: true,
+    schoolWaiverLabel: 'საგანმანათლებლო ორგანიზაცია ფოთიდან (უფასო)',
+    schoolWaiverText: 'ფოთში რეგისტრირებული სკოლებისთვის და საგანმანათლებლო დაწესებულებებისთვის სივრცეების დაჯავშნა სრულიად უფასოა!'
   });
 
   // Tracking individual visitors' guest bookings submissions globally
@@ -373,7 +375,9 @@ export default function App() {
               invoiceBankName: 'საქართველოს ბანკი',
               invoiceIban: 'GE90BG0000000123456789',
               invoiceTreasuryCode: '300773191',
-              invoiceFooter: 'გმადლობთ, რომ სარგებლობთ ახალგაზრდული ჰაბის სივრცით!'
+              invoiceFooter: 'გმადლობთ, რომ სარგებლობთ ახალგაზრდული ჰაბის სივრცით!',
+              schoolWaiverLabel: 'საგანმანათლებლო ორგანიზაცია ფოთიდან (უფასო)',
+              schoolWaiverText: 'ფოთში რეგისტრირებული სკოლებისთვის და საგანმანათლებლო დაწესებულებებისთვის სივრცეების დაჯავშნა სრულიად უფასოა!'
             }).catch(err => console.error("Error setting initial settings:", err));
           }
         }
@@ -752,6 +756,61 @@ export default function App() {
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, `bookings/${id}`);
       showNotification('შეცდომა ჯავშნის უარყოფისას', 'error');
+    }
+  };
+
+  const handleUpdateBooking = async (updatedBooking: Booking, reGenerateInvoice?: boolean) => {
+    try {
+      let finalBooking = { ...updatedBooking };
+      
+      if (reGenerateInvoice) {
+        const approvedBookingsWithInvoice = bookings.filter(b => b.invoiceNumber);
+        let maxVal = 0;
+        
+        approvedBookingsWithInvoice.forEach(b => {
+          if (b.invoiceNumber) {
+            const parts = b.invoiceNumber.split('-');
+            const lastPart = parts[parts.length - 1]; // e.g., "0001"
+            const num = parseInt(lastPart, 10);
+            if (!isNaN(num) && num > maxVal) {
+              maxVal = num;
+            }
+          }
+        });
+        
+        const nextVal = maxVal + 1;
+        const padded = String(nextVal).padStart(4, '0');
+        const year = new Date().getFullYear();
+        const invNum = `INV-${year}-${padded}`;
+        
+        const today = new Date();
+        const dd = String(today.getDate()).padStart(2, '0');
+        const mm = String(today.getMonth() + 1).padStart(2, '0');
+        const yyyy = today.getFullYear();
+        const formattedInvoiceDate = `${dd}.${mm}.${yyyy}`;
+        
+        finalBooking.status = 'approved';
+        finalBooking.invoiceNumber = invNum;
+        finalBooking.invoiceDate = formattedInvoiceDate;
+        
+        // Generate and save updated confirmation email in Firestore
+        const approveEmail = {
+          to: finalBooking.email,
+          subject: `განახლებული ინვოისი და თანხმობა დაჯავშნაზე [${finalBooking.roomName}] - ${bookingSettings.invoiceOrgName}`,
+          type: 'approved',
+          timestamp: new Date().toISOString().replace('T', ' ').substring(0, 16),
+          body: `გამარჯობა ${finalBooking.firstName} ${finalBooking.lastName}, \n\nთქვენი ჯავშნის დეტალები განახლდა ადმინისტრაციის მიერ. \n\nგანახლებული დეტალები:\n- ოთახი: ${finalBooking.roomName}\n- თარიღი: ${finalBooking.date}\n- საათები: ${finalBooking.durationHours}\n- ადამიანების რაოდენობა: ${finalBooking.numPeople} კაცი\n- საერთო საფასური: ₾${finalBooking.totalPrice}.00.\n\nმიბმულია განახლებული საგადახდო ინვოისი #${invNum} (თარიღი: ${formattedInvoiceDate}). გთხოვთ გადაიხადოთ მითითებულ საბანკო ანგარიშზე ჰაბში მოსვლამდე.\n\nსაბანკო რეკვიზიტები:\n- მიმღები: ${bookingSettings.invoiceOrgName}\n- ბანკი: ${bookingSettings.invoiceBankName}\n- ანგარიში (IBAN): ${bookingSettings.invoiceIban}${bookingSettings.invoiceTreasuryCode ? `\n- სახაზინო კოდი: ${bookingSettings.invoiceTreasuryCode}` : ''}\n\nპატივისცემით, \n${bookingSettings.invoiceOrgName}.`,
+          invoiceNum: invNum
+        };
+        const emailId = Math.random().toString(36).substr(2, 9);
+        await setDoc(doc(db, 'emails', emailId), sanitizeForFirestore(approveEmail));
+      }
+      
+      await setDoc(doc(db, 'bookings', finalBooking.id), sanitizeForFirestore(finalBooking));
+      showNotification('ჯავშანი წარმატებით განახლდა' + (reGenerateInvoice ? ' და ახალი ინვოისი გაიგზავნა' : ''), 'success');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `bookings/${updatedBooking.id}`);
+      showNotification('შეცდომა ჯავშნის განახლებისას', 'error');
     }
   };
 
@@ -1278,6 +1337,7 @@ export default function App() {
                   onDeleteRoom={handleDeleteRoom}
                   onApproveBooking={handleApproveBooking}
                   onRejectBooking={handleRejectBooking}
+                  onUpdateBooking={handleUpdateBooking}
                   onAddQuestion={handleAddQuestion}
                   onDeleteQuestion={handleDeleteQuestion}
                   onAddHubItem={handleAddHubItem}

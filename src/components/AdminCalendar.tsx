@@ -7,7 +7,7 @@ import React, { useState, useMemo } from 'react';
 import { Room, Booking } from '../types';
 import { 
   ChevronLeft, ChevronRight, Calendar as CalendarIcon, 
-  MapPin, Clock, Users, User, Check, X, FileText, Search, Filter
+  MapPin, Clock, Users, User, Check, X, FileText, Search, Filter, Edit
 } from 'lucide-react';
 
 interface AdminCalendarProps {
@@ -21,6 +21,7 @@ interface AdminCalendarProps {
   setRejectionReason: (reason: string) => void;
   onConfirmReject: (booking: Booking) => void;
   onCancelReject: () => void;
+  onEditTrigger?: (booking: Booking) => void;
 }
 
 const MONTHS_GE = [
@@ -40,7 +41,8 @@ export default function AdminCalendar({
   rejectionReason,
   setRejectionReason,
   onConfirmReject,
-  onCancelReject
+  onCancelReject,
+  onEditTrigger
 }: AdminCalendarProps) {
   // Current calendar view date pointer
   const today = useMemo(() => new Date(), []);
@@ -484,6 +486,15 @@ export default function AdminCalendar({
 
                   {/* Direct Administrative Actions available right inside calendar column! */}
                   <div className="flex flex-wrap items-center justify-end gap-1.5 pt-2 border-t border-slate-150/60">
+                    <button
+                      onClick={() => onEditTrigger && onEditTrigger(b)}
+                      className="px-2 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-[10px] font-bold flex items-center space-x-1 cursor-pointer transition-colors"
+                      title="რედაქტირება"
+                    >
+                      <Edit className="h-3 w-3" />
+                      <span>რედაქტირება</span>
+                    </button>
+
                     {b.status === 'pending' && (
                       <>
                         <button

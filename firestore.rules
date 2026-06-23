@@ -25,19 +25,19 @@ service cloud.firestore {
     // Entity Validations
     function isValidRoom(data) {
       return data.keys().hasAll(['id', 'name', 'description', 'capacity', 'price', 'imageUrl', 'features']) &&
-             data.keys().size() >= 7 && data.keys().size() <= 13 &&
+             data.keys().size() >= 7 && data.keys().size() <= 30 &&
              data.id is string && data.id.size() <= 128 &&
-             data.name is string && data.name.size() <= 256 &&
-             data.description is string && data.description.size() <= 2000 &&
-             (data.capacity is int || data.capacity is float) && data.capacity >= 0 && data.capacity <= 10000 &&
+             data.name is string && data.name.size() <= 512 &&
+             data.description is string && data.description.size() <= 10000 &&
+             (data.capacity is string ? data.capacity.size() <= 64 : (data.capacity is int || data.capacity is float) && data.capacity >= 0 && data.capacity <= 10000) &&
              (data.price is int || data.price is float) && data.price >= 0 &&
              data.imageUrl is string && data.imageUrl.size() <= 2000000 &&
-             data.features is list && data.features.size() <= 40 &&
-             (!('dayPrice' in data) || (data.dayPrice is int || data.dayPrice is float)) &&
-             (!('imageUrls' in data) || (data.imageUrls is list && data.imageUrls.size() <= 20)) &&
-             (!('panoramaUrl' in data) || (data.panoramaUrl is string && data.panoramaUrl.size() <= 1000)) &&
-             (!('videoUrl' in data) || (data.videoUrl is string && data.videoUrl.size() <= 1000)) &&
-             (!('order' in data) || (data.order is int || data.order is float));
+             data.features is list && data.features.size() <= 100 &&
+             (!('dayPrice' in data) || (data.dayPrice is int || data.dayPrice is float || data.dayPrice == null)) &&
+             (!('imageUrls' in data) || (data.imageUrls is list && data.imageUrls.size() <= 100)) &&
+             (!('panoramaUrl' in data) || (data.panoramaUrl is string && data.panoramaUrl.size() <= 2000 || data.panoramaUrl == null)) &&
+             (!('videoUrl' in data) || (data.videoUrl is string && data.videoUrl.size() <= 2000 || data.videoUrl == null)) &&
+             (!('order' in data) || (data.order is int || data.order is float || data.order == null));
     }
 
     function isValidCustomQuestion(data) {

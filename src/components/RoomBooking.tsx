@@ -11,13 +11,20 @@ import {
   Building2, User2, Eye, Info, Percent, X, Check, Youtube, Compass, GraduationCap 
 } from 'lucide-react';
 import { formatDisplayDate } from '../utils/dateFormatter';
+import { getMaxCapacity } from '../utils/capacityHelper';
 
 interface RoomBookingProps {
   rooms: Room[];
   bookings: Booking[];
   customQuestions: CustomQuestion[];
   bookingSettingsValue?: { fullDayDiscount: number; multiDayDiscount: number }; // Optional fallback
-  bookingSettings?: { fullDayDiscount: number; multiDayDiscount: number };
+  bookingSettings?: { 
+    fullDayDiscount: number; 
+    multiDayDiscount: number;
+    schoolWaiverLabel?: string;
+    schoolWaiverText?: string;
+    [key: string]: any;
+  };
   onAddBooking: (booking: Omit<Booking, 'id' | 'createdAt' | 'status'>) => void;
 }
 
@@ -259,7 +266,8 @@ export default function RoomBooking({
 
     // Capacity validation check (runs across all selected rooms to ensure maximum constraints)
     for (const r of selectedRooms) {
-      if (numPeople > r.capacity) {
+      const maxCap = getMaxCapacity(r.capacity);
+      if (maxCap > 0 && numPeople > maxCap) {
         setErrorMessage(`დაუშვებელია დაჯავშნა! ოთახის "${r.name}" მაქსიმალური ტევადობაა ${r.capacity} ადამიანი.`);
         return;
       }
@@ -318,7 +326,8 @@ export default function RoomBooking({
 
     // Capacity validation check (runs across all selected rooms to ensure maximum constraints)
     for (const r of selectedRooms) {
-      if (numPeople > r.capacity) {
+      const maxCap = getMaxCapacity(r.capacity);
+      if (maxCap > 0 && numPeople > maxCap) {
         setErrorMessage(`დაუშვებელია დაჯავშნა! ოთახის "${r.name}" მაქსიმალური ტევადობაა ${r.capacity} ადამიანი.`);
         return;
       }
@@ -465,7 +474,7 @@ export default function RoomBooking({
 
                         {/* Room controls trigger toolbar */}
                         <div className="mt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-t border-slate-100 pt-3">
-                          {room.capacity > 0 && (
+                          {getMaxCapacity(room.capacity) > 0 && (
                             <span className="flex items-center text-xs text-slate-500 font-bold">
                               <Users className="h-3.5 w-3.5 mr-1" />
                               <span>ტევადობა: {room.capacity} პერსონა</span>
@@ -1016,9 +1025,9 @@ export default function RoomBooking({
                         <label htmlFor="form-is-school" className="text-xs font-sans text-slate-600 leading-relaxed cursor-pointer select-none">
                           <span className="font-extrabold text-slate-900 text-sm flex items-center mb-1">
                             <GraduationCap className="h-4.5 w-4.5 mr-1.5 text-emerald-600 shrink-0" />
-                            საგანმანათლებლო ორგანიზაცია ფოთიდან (უფასო)
+                            {bookingSettings?.schoolWaiverLabel ?? 'საგანმანათლებლო ორგანიზაცია ფოთიდან (უფასო)'}
                           </span>
-                          ფოთში რეგისტრირებული სკოლებისთვის და საგანმანათლებლო დაწესებულებებისთვის სივრცეების დაჯავშნა სრულიად უფასოა!
+                          {bookingSettings?.schoolWaiverText ?? 'ფოთში რეგისტრირებული სკოლებისთვის და საგანმანათლებლო დაწესებულებებისთვის სივრცეების დაჯავშნა სრულიად უფასოა!'}
                         </label>
                       </div>
                     </div>

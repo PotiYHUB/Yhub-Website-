@@ -16,6 +16,7 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage } from '../firebase';
 import { optimizeImageForWeb, blobToBase64 } from '../utils/imageOptimizer';
 import { formatDisplayDate } from '../utils/dateFormatter';
+import { getMaxCapacity } from '../utils/capacityHelper';
 // @ts-ignore
 import logoImg from '../assets/images/small-logo.png';
 
@@ -33,6 +34,7 @@ interface AdminPanelProps {
   onDeleteRoom: (id: string) => void;
   onApproveBooking: (id: string, invoiceNum: string) => void;
   onRejectBooking: (id: string, reason: string) => void;
+  onUpdateBooking: (booking: Booking, reGenerateInvoice?: boolean) => void;
   onAddQuestion: (q: CustomQuestion) => void;
   onDeleteQuestion: (id: string) => void;
   onAddHubItem: (item: HubItem) => void;
@@ -62,6 +64,7 @@ export default function AdminPanel({
   onDeleteRoom,
   onApproveBooking,
   onRejectBooking,
+  onUpdateBooking,
   onAddQuestion,
   onDeleteQuestion,
   onAddHubItem,
@@ -107,6 +110,83 @@ export default function AdminPanel({
   
   // Custom interactive modulations
   const [selectedInvoiceBooking, setSelectedInvoiceBooking] = useState<Booking | null>(null);
+
+  // Edit Reserved Room Booking states
+  const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
+  const [editB_roomId, setEditB_roomId] = useState('');
+  const [editB_roomName, setEditB_roomName] = useState('');
+  const [editB_date, setEditB_date] = useState('');
+  const [editB_durationHours, setEditB_durationHours] = useState('');
+  const [editB_numPeople, setEditB_numPeople] = useState(1);
+  const [editB_totalPrice, setEditB_totalPrice] = useState(0);
+  const [editB_firstName, setEditB_firstName] = useState('');
+  const [editB_lastName, setEditB_lastName] = useState('');
+  const [editB_organization, setEditB_organization] = useState('');
+  const [editB_email, setEditB_email] = useState('');
+  const [editB_phone, setEditB_phone] = useState('');
+  const [editB_answers, setEditB_answers] = useState<Record<string, string>>({});
+  const [editB_status, setEditB_status] = useState<'pending' | 'approved' | 'rejected'>('pending');
+  const [editB_invoiceNumber, setEditB_invoiceNumber] = useState('');
+  const [editB_invoiceDate, setEditB_invoiceDate] = useState('');
+  const [editB_adminNotes, setEditB_adminNotes] = useState('');
+  const [editB_reGenerateInvoice, setEditB_reGenerateInvoice] = useState(false);
+
+  const handleEditBooking = (b: Booking) => {
+    setEditingBooking(b);
+    setEditB_roomId(b.roomId);
+    setEditB_roomName(b.roomName);
+    setEditB_date(b.date);
+    setEditB_durationHours(b.durationHours);
+    setEditB_numPeople(b.numPeople);
+    setEditB_totalPrice(b.totalPrice);
+    setEditB_firstName(b.firstName);
+    setEditB_lastName(b.lastName);
+    setEditB_organization(b.organization || '');
+    setEditB_email(b.email);
+    setEditB_phone(b.phone);
+    setEditB_answers(b.answers || {});
+    setEditB_status(b.status);
+    setEditB_invoiceNumber(b.invoiceNumber || '');
+    setEditB_invoiceDate(b.invoiceDate || '');
+    setEditB_adminNotes(b.adminNotes || '');
+    setEditB_reGenerateInvoice(false);
+  };
+
+  const handleRoomChangeInEdit = (selectedRoomId: string) => {
+    const room = rooms.find(r => r.id === selectedRoomId);
+    if (room) {
+      setEditB_roomId(room.id);
+      setEditB_roomName(room.name);
+    }
+  };
+
+  const handleEditBookingSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingBooking) return;
+
+    const updatedBooking: Booking = {
+      ...editingBooking,
+      roomId: editB_roomId,
+      roomName: editB_roomName,
+      date: editB_date,
+      durationHours: editB_durationHours,
+      numPeople: Number(editB_numPeople),
+      totalPrice: Number(editB_totalPrice),
+      firstName: editB_firstName,
+      lastName: editB_lastName,
+      organization: editB_organization,
+      email: editB_email,
+      phone: editB_phone,
+      answers: editB_answers,
+      status: editB_status,
+      invoiceNumber: editB_invoiceNumber || undefined,
+      invoiceDate: editB_invoiceDate || undefined,
+      adminNotes: editB_adminNotes || undefined
+    };
+
+    onUpdateBooking(updatedBooking, editB_reGenerateInvoice);
+    setEditingBooking(null);
+  };
 
   const getInvoiceQtyDisplay = (booking: Booking) => {
     if (!booking.durationHours) return "—";
@@ -228,7 +308,7 @@ export default function AdminPanel({
       id: r.id,
       name: r.name,
       order: r.order !== undefined ? r.order : (idx + 1),
-      capacity: r.capacity || 10,
+      capacity: r.capacity !== undefined ? r.capacity : 10,
       price: r.price || 15,
       dayPrice: r.dayPrice || Math.round((r.price || 15) * 8),
       bookingsCount: bookings.filter(b => b.roomId.includes(r.id)).length,
@@ -298,16 +378,17 @@ export default function AdminPanel({
         for (const sr of sheetRooms) {
           const original = rooms.find(r => r.id === sr.id);
           if (original) {
+            const finalCap = isNaN(Number(sr.capacity)) || String(sr.capacity).trim() === '' ? String(sr.capacity).trim() : Number(sr.capacity);
             if (
               original.order !== Number(sr.order) || 
-              original.capacity !== Number(sr.capacity) || 
+              original.capacity !== finalCap || 
               original.price !== Number(sr.price) || 
               original.dayPrice !== Number(sr.dayPrice)
             ) {
               await onUpdateRoom({
                 ...original,
                 order: Number(sr.order),
-                capacity: Number(sr.capacity),
+                capacity: finalCap,
                 price: Number(sr.price),
                 dayPrice: Number(sr.dayPrice)
               });
@@ -332,7 +413,7 @@ export default function AdminPanel({
   const [editRoomId, setEditRoomId] = useState<string | null>(null);
   const [roomName, setRoomName] = useState('');
   const [roomDesc, setRoomDesc] = useState('');
-  const [roomCap, setRoomCap] = useState(10);
+  const [roomCap, setRoomCap] = useState<string | number>(10);
   const [roomPrice, setRoomPrice] = useState(15);
   const [roomDayPrice, setRoomDayPrice] = useState(120);
   const [roomImg, setRoomImg] = useState('');
@@ -432,13 +513,14 @@ export default function AdminPanel({
       : ['WiFi', 'პროექტორი'];
 
     const fallbackImg = roomImg || 'https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=800&q=80';
+    const finalRoomCap = isNaN(Number(roomCap)) || String(roomCap).trim() === '' ? String(roomCap).trim() : Number(roomCap);
 
     if (editRoomId) {
       onUpdateRoom({
         id: editRoomId,
         name: roomName,
         description: roomDesc,
-        capacity: Number(roomCap),
+        capacity: finalRoomCap,
         price: Number(roomPrice),
         dayPrice: Number(roomDayPrice),
         imageUrl: fallbackImg,
@@ -454,7 +536,7 @@ export default function AdminPanel({
         id: Date.now().toString(),
         name: roomName,
         description: roomDesc,
-        capacity: Number(roomCap),
+        capacity: finalRoomCap,
         price: Number(roomPrice),
         dayPrice: Number(roomDayPrice),
         imageUrl: fallbackImg,
@@ -991,6 +1073,7 @@ export default function AdminPanel({
                 setRejectionReason={setRejectionReason}
                 onConfirmReject={handleConfirmReject}
                 onCancelReject={() => setRejectingBookingId(null)}
+                onEditTrigger={handleEditBooking}
               />
             )}
 
@@ -1129,6 +1212,15 @@ export default function AdminPanel({
                           </div>
 
                           <div className="flex space-x-2">
+                            <button
+                              id={`booking-edit-${b.id}`}
+                              onClick={() => handleEditBooking(b)}
+                              className="px-4 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 transition-colors text-xs font-bold rounded-xl flex items-center space-x-1 cursor-pointer"
+                            >
+                              <Edit className="h-3.5 w-3.5" />
+                              <span>რედაქტირება</span>
+                            </button>
+
                             {b.status === 'pending' && (
                               <>
                                 <button
@@ -1314,9 +1406,9 @@ export default function AdminPanel({
                         <label className="block text-xs font-bold text-slate-500 mb-1">მაქსიმალური ტევადობა (პერსონა - 0 საჩვენებლად გამორთავს) *</label>
                         <input
                           id="admin-room-capacity"
-                          type="number"
+                          type="text"
                           value={roomCap}
-                          onChange={(e) => setRoomCap(Math.max(0, Number(e.target.value)))}
+                          onChange={(e) => setRoomCap(e.target.value)}
                           className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-sans focus:outline-hidden"
                           required
                         />
@@ -1549,7 +1641,7 @@ export default function AdminPanel({
                       </div>
 
                       <div className="flex justify-between items-center text-xs font-medium border-t border-slate-150 pt-3 mt-2">
-                        {room.capacity > 0 ? (
+                        {getMaxCapacity(room.capacity) > 0 ? (
                           <span className="text-slate-450">ტევადობა: {room.capacity} პერსონა</span>
                         ) : (
                           <span />
@@ -2617,6 +2709,9 @@ export default function AdminPanel({
                   const stat4Value = formData.get('stat4Value') as string;
                   const stat4Label = formData.get('stat4Label') as string;
 
+                  const schoolWaiverLabel = formData.get('schoolWaiverLabel') as string;
+                  const schoolWaiverText = formData.get('schoolWaiverText') as string;
+
                   onUpdateSettings({
                     ...bookingSettings,
                     hubAddress,
@@ -2648,6 +2743,8 @@ export default function AdminPanel({
                     stat3Label,
                     stat4Value,
                     stat4Label,
+                    schoolWaiverLabel,
+                    schoolWaiverText,
                     seoTitle,
                     seoDescription,
                     seoKeywords,
@@ -2764,6 +2861,40 @@ export default function AdminPanel({
                             defaultValue={bookingSettings?.chatPhone ?? '+995599123456'}
                             placeholder="მაგ: +995599123456"
                             className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-sans focus:outline-hidden"
+                            required
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Part A.2: Free Booking Settings */}
+                    <div className="pt-4 border-t border-slate-100">
+                      <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                        უფასო დაჯავშნის პარამეტრები (სკოლები & საგანმანათლებლო დაწესებულებები)
+                      </h4>
+                      
+                      <div className="grid grid-cols-1 gap-4">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 mb-1">უფასო დაჯავშნის მონიშვნის ტექსტი (Checkbox Label) *</label>
+                          <input
+                            type="text"
+                            name="schoolWaiverLabel"
+                            defaultValue={bookingSettings?.schoolWaiverLabel ?? 'საგანმანათლებლო ორგანიზაცია ფოთიდან (უფასო)'}
+                            placeholder="მაგ: საგანმანათლებლო ორგანიზაცია ფოთიდან (უფასო)"
+                            className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-sans focus:outline-hidden"
+                            required
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 mb-1">უფასო დაჯავშნის განმარტებითი ტექსტი (Description Text) *</label>
+                          <textarea
+                            rows={2}
+                            name="schoolWaiverText"
+                            defaultValue={bookingSettings?.schoolWaiverText ?? 'ფოთში რეგისტრირებული სკოლებისთვის და საგანმანათლებლო დაწესებულებებისთვის სივრცეების დაჯავშნა სრულიად უფასოა!'}
+                            placeholder="მაგ: ფოთში რეგისტრირებული სკოლებისთვის და საგანმანათლებლო დაწესებულებებისთვის სივრცეების დაჯავშნა სრულიად უფასოა!"
+                            className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-sans focus:outline-hidden resize-none"
                             required
                           />
                         </div>
@@ -3615,7 +3746,7 @@ export default function AdminPanel({
                         <td className="px-3 border-r border-[#e1e1e1]">საშუალო მაჩვენებლები ➔</td>
                         <td className="px-3 border-r border-[#e1e1e1]"></td>
                         <td className="px-3 border-r border-[#e1e1e1] text-center font-bold text-[#107c41]">
-                          {Math.round(sheetRooms.reduce((acc, r) => acc + Number(r.capacity || 0), 0) / Math.max(1, sheetRooms.length))} / ოთახზე
+                          {Math.round(sheetRooms.reduce((acc, r) => acc + getMaxCapacity(r.capacity), 0) / Math.max(1, sheetRooms.length))} / ოთახზე
                         </td>
                         <td className="px-3 border-r border-[#e1e1e1] text-right text-blue-800">
                           ₾{Math.round(sheetRooms.reduce((acc, r) => acc + Number(r.price || 0), 0) / Math.max(1, sheetRooms.length))}
@@ -3924,6 +4055,310 @@ export default function AdminPanel({
                   💡 რჩევა: PDF ფაილის ჩამოსატვირთად აირჩიეთ <b>"Save as PDF" (PDF-ად შენახვა)</b> ბეჭდვის ფანჯარაში
                 </p>
               </div>
+
+            </div>
+          </div>
+        )}
+
+        {/* Reservation Edit modal popup overlay */}
+        {editingBooking && (
+          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-md flex justify-center items-center p-4 overflow-y-auto">
+            <div className="bg-white rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-100 flex flex-col">
+              
+              {/* Header */}
+              <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-3xl">
+                <div>
+                  <span className="text-[10px] text-brand-500 font-black uppercase tracking-wider block font-mono">ჯავშნის რედაქტირება</span>
+                  <h2 className="text-lg font-display font-bold text-slate-800 mt-1">
+                    ჯავშნის კოდი: RSV-{editingBooking.id}
+                  </h2>
+                </div>
+                <button 
+                  onClick={() => setEditingBooking(null)}
+                  className="p-1.5 hover:bg-slate-200/80 rounded-xl text-slate-400 hover:text-slate-650 transition-colors cursor-pointer"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Form Content */}
+              <form onSubmit={handleEditBookingSubmit} className="p-6 space-y-5 flex-1">
+                
+                {/* Section 1: Room & Schedule */}
+                <div className="space-y-4">
+                  <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest border-b border-slate-100/80 pb-1 font-mono">
+                    სივრცე და თარიღები
+                  </h3>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Room Dropdown Selection */}
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-slate-700">ოთახი / დარბაზი:</label>
+                      <select
+                        value={editB_roomId}
+                        onChange={(e) => handleRoomChangeInEdit(e.target.value)}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:bg-white focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500/80 outline-none cursor-pointer"
+                        required
+                      >
+                        {rooms.map((r) => (
+                          <option key={r.id} value={r.id}>
+                            {r.name} (მინ. ₾{r.price}/სთ)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Date */}
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-slate-700">თარიღი / თარიღები:</label>
+                      <input
+                        type="text"
+                        value={editB_date}
+                        onChange={(e) => setEditB_date(e.target.value)}
+                        placeholder="მაგ: 23.06.2026"
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-sans focus:bg-white focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500/80 outline-none font-medium"
+                        required
+                      />
+                    </div>
+
+                    {/* Duration / Hours */}
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-slate-700">საათები / ხანგრძლივობა:</label>
+                      <input
+                        type="text"
+                        value={editB_durationHours}
+                        onChange={(e) => setEditB_durationHours(e.target.value)}
+                        placeholder="მაგ: 12:00 - 15:00"
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-sans focus:bg-white focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500/80 outline-none font-medium"
+                        required
+                      />
+                    </div>
+
+                    {/* Number of People */}
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-slate-700">ადამიანების რაოდენობა:</label>
+                      <input
+                        type="number"
+                        min={1}
+                        value={editB_numPeople}
+                        onChange={(e) => setEditB_numPeople(Number(e.target.value))}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono focus:bg-white focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500/80 outline-none font-semibold"
+                        required
+                      />
+                    </div>
+
+                    {/* Price */}
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-slate-700">სრული ფასი (₾):</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={editB_totalPrice}
+                        onChange={(e) => setEditB_totalPrice(Number(e.target.value))}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-purple-700 bg-purple-50 focus:bg-white focus:ring-2 focus:ring-purple-500/20 focus:border-purple-550 outline-none"
+                        required
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section 2: Personal Information */}
+                <div className="space-y-4 pt-1">
+                  <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest border-b border-slate-100/80 pb-1 font-mono">
+                    დამკვეთის ინფორმაცია
+                  </h3>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* First Name */}
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-slate-700">სახელი:</label>
+                      <input
+                        type="text"
+                        value={editB_firstName}
+                        onChange={(e) => setEditB_firstName(e.target.value)}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-sans focus:bg-white focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500/80 outline-none font-medium"
+                        required
+                      />
+                    </div>
+
+                    {/* Last Name */}
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-slate-700">გვარი:</label>
+                      <input
+                        type="text"
+                        value={editB_lastName}
+                        onChange={(e) => setEditB_lastName(e.target.value)}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-sans focus:bg-white focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500/80 outline-none font-medium"
+                        required
+                      />
+                    </div>
+
+                    {/* Organization Name */}
+                    <div className="space-y-1 md:col-span-2">
+                      <label className="block text-xs font-bold text-slate-700">ორგანიზაცია:</label>
+                      <input
+                        type="text"
+                        value={editB_organization}
+                        onChange={(e) => setEditB_organization(e.target.value)}
+                        placeholder="ასეთის არსებობის შემთხვევაში"
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-sans focus:bg-white focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500/80 outline-none font-medium"
+                      />
+                    </div>
+
+                    {/* Email */}
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-slate-700">ელ-ფოსტა:</label>
+                      <input
+                        type="email"
+                        value={editB_email}
+                        onChange={(e) => setEditB_email(e.target.value)}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-sans focus:bg-white focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500/80 outline-none font-medium"
+                        required
+                      />
+                    </div>
+
+                    {/* Phone */}
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-slate-700">ტელეფონი:</label>
+                      <input
+                        type="tel"
+                        value={editB_phone}
+                        onChange={(e) => setEditB_phone(e.target.value)}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono focus:bg-white focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500/80 outline-none font-medium"
+                        required
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section 3: Custom Questionnaire Answers */}
+                {Object.keys(editB_answers).length > 0 && (
+                  <div className="space-y-4 pt-1">
+                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest border-b border-slate-100/80 pb-1 font-mono">
+                      დამატებითი კითხვარის პასუხები
+                    </h3>
+
+                    <div className="space-y-3">
+                      {Object.entries(editB_answers).map(([qLabel, answerVal]) => (
+                        <div key={qLabel} className="space-y-1">
+                          <label className="block text-xs font-bold text-slate-650 leading-normal">{qLabel}:</label>
+                          <input
+                            type="text"
+                            value={answerVal}
+                            onChange={(e) => {
+                              const updatedAnswers = { ...editB_answers };
+                              updatedAnswers[qLabel] = e.target.value;
+                              setEditB_answers(updatedAnswers);
+                            }}
+                            className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-sans focus:bg-white focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500/80 outline-none"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Section 4: Admin Controls & Billing */}
+                <div className="space-y-4 pt-1 bg-slate-50/50 p-4 rounded-2xl border border-slate-150">
+                  <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest border-b border-slate-200/80 pb-1 font-mono">
+                    ადმინისტრაციული პარამეტრები & ბილინგი
+                  </h3>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Status Dropdown */}
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-slate-700">სტატუსი:</label>
+                      <select
+                        value={editB_status}
+                        onChange={(e) => setEditB_status(e.target.value as any)}
+                        className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500/80 outline-none cursor-pointer"
+                      >
+                        <option value="pending">⏳ მომლოდინე (Pending)</option>
+                        <option value="approved">✅ დადასტურებული (Approved)</option>
+                        <option value="rejected">❌ უარყოფილი (Rejected)</option>
+                      </select>
+                    </div>
+
+                    {/* Admin Notes / Rejection Reason */}
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-slate-700">ადმინის შენიშვნა / უარყოფის მიზეზი:</label>
+                      <textarea
+                        value={editB_adminNotes}
+                        onChange={(e) => setEditB_adminNotes(e.target.value)}
+                        placeholder="მაგალითად: უარყოფილია რემონტის გამო."
+                        rows={1}
+                        className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-sans focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500/80 outline-none resize-none"
+                      />
+                    </div>
+
+                    {/* Conditionally reveal invoice details if approved */}
+                    {(editB_status === 'approved' || editingBooking.status === 'approved') && (
+                      <>
+                        {/* Invoice Number */}
+                        <div className="space-y-1">
+                          <label className="block text-xs font-bold text-slate-700">ინვოისის ნომერი:</label>
+                          <input
+                            type="text"
+                            value={editB_invoiceNumber}
+                            onChange={(e) => setEditB_invoiceNumber(e.target.value)}
+                            placeholder="მაგ: INV-2026-0001"
+                            className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-mono focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500/80 outline-none"
+                          />
+                        </div>
+
+                        {/* Invoice Date */}
+                        <div className="space-y-1">
+                          <label className="block text-xs font-bold text-slate-700">ინვოისის თარიღი:</label>
+                          <input
+                            type="text"
+                            value={editB_invoiceDate}
+                            onChange={(e) => setEditB_invoiceDate(e.target.value)}
+                            placeholder="მაგ: 23.06.2026"
+                            className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-mono focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500/80 outline-none"
+                          />
+                        </div>
+
+                        {/* Invoice Regeneration Checkbox */}
+                        <div className="md:col-span-2 pt-1">
+                          <div className="flex items-start bg-indigo-50 border border-indigo-150 p-3.5 rounded-xl">
+                            <input
+                              id="regenerate-invoice-checkbox"
+                              type="checkbox"
+                              checked={editB_reGenerateInvoice}
+                              onChange={(e) => setEditB_reGenerateInvoice(e.target.checked)}
+                              className="h-4.5 w-4.5 bg-white border border-slate-300 rounded text-indigo-600 focus:ring-indigo-500/20 transition-all cursor-pointer mt-0.5"
+                            />
+                            <label htmlFor="regenerate-invoice-checkbox" className="ml-2.5 text-xs font-bold text-slate-700 leading-tight select-none cursor-pointer">
+                              ახალი ინვოისის თავიდან გენერირება & გაგზავნა (Re-generate Invoice & Send)
+                              <span className="block text-[10px] text-slate-500 font-normal mt-1.5 leading-relaxed font-sans">
+                                მონიშნეთ ეს ველი, რათა სისტემამ ავტომატურად შექმნას ახალი საინვოისო ნომერი მიმდინარე თარიღით და ელ-ფოსტით გაუგზავნოს დამკვეთს განახლებული საგადახდო ფურცელი.
+                              </span>
+                            </label>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Submit & Cancel triggers row */}
+                <div className="flex justify-end gap-3 pt-4 border-t border-slate-100 bg-slate-50/50 p-6 -mx-6 -mb-6 rounded-b-3xl">
+                  <button
+                    type="button"
+                    onClick={() => setEditingBooking(null)}
+                    className="px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 hover:border-slate-300 text-xs font-semibold rounded-xl cursor-pointer transition-colors"
+                  >
+                    გაუქმება
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl shadow-xs cursor-pointer transition-colors"
+                  >
+                    მონაცემების შენახვა
+                  </button>
+                </div>
+
+              </form>
 
             </div>
           </div>

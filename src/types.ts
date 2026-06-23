@@ -37,7 +37,7 @@ export interface Room {
   id: string;
   name: string;
   description: string;
-  capacity: number;
+  capacity: string | number;
   price: number; // Fixed price (hourly or slot-based, we can let it be price representing booking event duration or hourly)
   dayPrice: number; // Day rate / full price in GEL if rented by day
   imageUrl: string;
