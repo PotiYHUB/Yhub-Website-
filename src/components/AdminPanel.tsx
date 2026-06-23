@@ -19,6 +19,8 @@ import { formatDisplayDate } from '../utils/dateFormatter';
 import { getMaxCapacity } from '../utils/capacityHelper';
 // @ts-ignore
 import logoImg from '../assets/images/small-logo.png';
+// @ts-ignore
+import stampImg from '../assets/images/stamp.png';
 
 interface AdminPanelProps {
   rooms: Room[];
@@ -3980,24 +3982,12 @@ export default function AdminPanel({
                   {/* Configurative Digital Stamp Frame */}
                   {(bookingSettings.invoiceShowStamp !== false) ? (
                     <div className="flex items-center space-x-3 select-none">
-                      <div className={`relative w-20 h-20 rounded-full border-4 border-double flex flex-col items-center justify-center text-center p-1 select-none rotate-6 transition-transform ${
-                        bookingSettings.invoiceStampColor === 'blue' ? 'border-blue-600/70 text-blue-700/80 bg-blue-50/10' :
-                        bookingSettings.invoiceStampColor === 'red' ? 'border-rose-600/70 text-rose-700/80 bg-rose-50/10' :
-                        bookingSettings.invoiceStampColor === 'purple' ? 'border-purple-600/70 text-purple-700/80 bg-purple-50/10' :
-                        'border-emerald-600/70 text-emerald-700/80 bg-emerald-50/10'
-                      }`}
-                      style={{ fontFamily: 'monospace' }}
-                      >
-                        {/* Circular Outer text representation */}
-                        <div className="absolute inset-0.5 text-[5px] uppercase font-bold flex items-center justify-center text-center p-0.5" style={{ letterSpacing: '0.2px' }}>
-                          <span className="w-full truncate">{bookingSettings.invoiceStampCircle || '• OFFICIAL SEAL •'}</span>
-                        </div>
-                        {/* Inner central stamp values */}
-                        <div className="z-10 py-1 bg-white border-y border-dashed border-current px-1.5 leading-none">
-                          <span className="block font-display font-black text-[9px] uppercase tracking-wider">{bookingSettings.invoiceStampText || 'APPROVED'}</span>
-                          <span className="block text-[6px] opacity-75 font-bold uppercase tracking-widest mt-0.5">{bookingSettings.invoiceStampDept || 'SERVICES'}</span>
-                        </div>
-                      </div>
+                      <img 
+                        src={stampImg} 
+                        alt="Poti Youth Hub Seal" 
+                        className="w-20 h-20 object-contain rotate-6 select-none" 
+                        referrerPolicy="no-referrer"
+                      />
                       <div className="flex flex-col">
                         <span className="text-[10px] text-slate-800 font-bold font-sans">ელექტრონული ბეჭედი</span>
                         <span className="text-[8px] text-slate-400 font-sans">Poti Youth Hub Seal</span>
