@@ -694,7 +694,7 @@ export default function App() {
     }
   };
 
-  const handleApproveBooking = async (id: string, invoiceNum: string) => {
+  const handleApproveBooking = async (id: string, invoiceNum: string, updatedTotalPrice?: number) => {
     try {
       const existing = bookings.find(b => b.id === id);
       if (!existing) return;
@@ -705,11 +705,14 @@ export default function App() {
       const yyyy = today.getFullYear();
       const formattedInvoiceDate = `${dd}.${mm}.${yyyy}`;
 
+      const finalTotalPrice = (updatedTotalPrice !== undefined && updatedTotalPrice > 0) ? updatedTotalPrice : existing.totalPrice;
+
       const updated: Booking = {
         ...existing,
         status: 'approved',
         invoiceNumber: invoiceNum,
-        invoiceDate: formattedInvoiceDate
+        invoiceDate: formattedInvoiceDate,
+        totalPrice: finalTotalPrice
       };
       await setDoc(doc(db, 'bookings', id), sanitizeForFirestore(updated));
       showNotification('ჯავშანი წარმატებით დადასტურდა და ინვოისი გაიგზავნა', 'success');

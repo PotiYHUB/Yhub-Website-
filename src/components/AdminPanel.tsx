@@ -41,7 +41,7 @@ interface AdminPanelProps {
   onAddRoom: (room: Room) => void;
   onUpdateRoom: (room: Room) => void;
   onDeleteRoom: (id: string) => void;
-  onApproveBooking: (id: string, invoiceNum: string) => void;
+  onApproveBooking: (id: string, invoiceNum: string, updatedTotalPrice?: number) => void;
   onRejectBooking: (id: string, reason: string) => void;
   onUpdateBooking: (booking: Booking, reGenerateInvoice?: boolean) => void;
   onAddQuestion: (q: CustomQuestion) => void;
@@ -146,6 +146,43 @@ export default function AdminPanel({
   const [rangeWeekdaysOnly, setRangeWeekdaysOnly] = useState(false);
   const [showRangeHelper, setShowRangeHelper] = useState(false);
 
+  const calculatePriceForParams = (roomIdStr: string, dateStr: string, durationStr: string): number => {
+    const roomIds = roomIdStr.split(',').map(id => id.trim()).filter(Boolean);
+    let pricePerDay = 0;
+    let pricePerHour = 0;
+
+    roomIds.forEach(id => {
+      const r = rooms.find(room => room.id === id);
+      if (r) {
+        pricePerDay += (r.dayPrice || Math.round(r.price * 8));
+        pricePerHour += r.price;
+      }
+    });
+
+    if (pricePerDay === 0 && pricePerHour === 0) {
+      pricePerDay = 50;
+      pricePerHour = 15;
+    }
+
+    const parsed = parseBookingDates(dateStr);
+    const daysCount = Math.max(1, parsed.length);
+
+    if (durationStr.includes("მთელი დღე") || durationStr === "00:00 - 24:00") {
+      return pricePerDay * daysCount;
+    } else {
+      const parts = durationStr.split('-');
+      if (parts.length === 2) {
+        const [startH, startM] = parts[0].trim().split(':').map(Number);
+        const [endH, endM] = parts[1].trim().split(':').map(Number);
+        if (!isNaN(startH) && !isNaN(endH)) {
+          const durationHrs = Math.max(0.5, ((endH * 60 + (endM || 0)) - (startH * 60 + (startM || 0))) / 60);
+          return Math.ceil(durationHrs) * pricePerHour * daysCount;
+        }
+      }
+      return pricePerHour * daysCount;
+    }
+  };
+
   const handleAddRangeToDate = () => {
     if (!rangeStartDate || !rangeEndDate) return;
     const start = new Date(rangeStartDate);
@@ -164,38 +201,26 @@ export default function AdminPanel({
 
     const existing = parseBookingDates(editB_date);
     const combined = Array.from(new Set([...existing, ...newDates])).sort();
-    setEditB_date(combined.join(', '));
+    const newDateStr = combined.join(', ');
+    setEditB_date(newDateStr);
+
+    // Automatically recalculate price for the new date range
+    const updatedPrice = calculatePriceForParams(editB_roomId, newDateStr, editB_durationHours);
+    setEditB_totalPrice(updatedPrice);
   };
 
   const handleRemoveDateFromEdit = (dateToRemove: string) => {
     const existing = parseBookingDates(editB_date);
     const remaining = existing.filter(d => d !== dateToRemove);
-    setEditB_date(remaining.join(', '));
+    const newDateStr = remaining.join(', ');
+    setEditB_date(newDateStr);
+    const updatedPrice = calculatePriceForParams(editB_roomId, newDateStr, editB_durationHours);
+    setEditB_totalPrice(updatedPrice);
   };
 
   const handleAutoCalcPrice = () => {
-    const selectedRoom = rooms.find(r => r.id === editB_roomId);
-    if (!selectedRoom) return;
-
-    const parsed = parseBookingDates(editB_date);
-    const daysCount = Math.max(1, parsed.length);
-
-    let pricePerDay = selectedRoom.price * 2;
-    if (editB_durationHours.includes("მთელი დღე") || editB_durationHours === "00:00 - 24:00") {
-      pricePerDay = selectedRoom.dayPrice || (selectedRoom.price * 8);
-    } else {
-      const parts = editB_durationHours.split('-');
-      if (parts.length === 2) {
-        const [startH, startM] = parts[0].trim().split(':').map(Number);
-        const [endH, endM] = parts[1].trim().split(':').map(Number);
-        if (!isNaN(startH) && !isNaN(endH)) {
-          const durationHrs = Math.max(0.5, ((endH * 60 + (endM || 0)) - (startH * 60 + (startM || 0))) / 60);
-          pricePerDay = Math.ceil(durationHrs) * selectedRoom.price;
-        }
-      }
-    }
-
-    setEditB_totalPrice(pricePerDay * daysCount);
+    const totalPrice = calculatePriceForParams(editB_roomId, editB_date, editB_durationHours);
+    setEditB_totalPrice(totalPrice);
   };
 
   const handleEditBooking = (b: Booking) => {
@@ -262,11 +287,12 @@ export default function AdminPanel({
   const getInvoiceQtyDisplay = (booking: Booking) => {
     if (!booking.durationHours) return "—";
     
-    // count number of days
-    const daysCount = booking.date ? booking.date.split(',').map(d => d.trim()).filter(Boolean).length : 1;
+    // count number of days accurately using parseBookingDates
+    const parsedDates = parseBookingDates(booking.date);
+    const daysCount = Math.max(1, parsedDates.length);
     
-    if (booking.durationHours.includes("მთელი დღე")) {
-      return daysCount > 1 ? `${daysCount} დღე` : "მთელი დღე";
+    if (booking.durationHours.includes("მთელი დღე") || booking.durationHours === "00:00 - 24:00") {
+      return daysCount > 1 ? `${daysCount} დღე` : "1 დღე (მთელი დღე)";
     }
     
     // Otherwise, parse time range
@@ -280,8 +306,9 @@ export default function AdminPanel({
         const startMin = startH * 60 + (startM || 0);
         const endMin = endH * 60 + (endM || 0);
         const diffHrs = Math.max(0.5, (endMin - startMin) / 60);
-        const totalHours = Math.ceil(diffHrs) * daysCount;
-        return `${totalHours} სთ`;
+        const hoursPerDay = Math.ceil(diffHrs);
+        const totalHours = hoursPerDay * daysCount;
+        return daysCount > 1 ? `${totalHours} სთ (${daysCount} დღე x ${hoursPerDay} სთ)` : `${totalHours} სთ`;
       }
     }
     
@@ -296,7 +323,7 @@ export default function AdminPanel({
     ids.forEach(id => {
       const r = rooms.find(room => room.id === id);
       if (r) {
-        if (booking.durationHours?.includes("მთელი დღე")) {
+        if (booking.durationHours?.includes("მთელი დღე") || booking.durationHours === "00:00 - 24:00") {
           totalRate += (r.dayPrice || Math.round(r.price * 8));
         } else {
           totalRate += r.price;
@@ -305,6 +332,42 @@ export default function AdminPanel({
     });
     
     return totalRate || 15;
+  };
+
+  const getInvoiceTotal = (booking: Booking): number => {
+    // If educational school with 100% waiver, total is 0
+    if (booking.totalPrice === 0 && (booking.organization?.toLowerCase().includes('სკოლა') || booking.organization?.toLowerCase().includes('school'))) {
+      return 0;
+    }
+
+    const parsedDates = parseBookingDates(booking.date);
+    const daysCount = Math.max(1, parsedDates.length);
+    const rate = getInvoiceRateDisplay(booking);
+
+    if (booking.durationHours?.includes("მთელი დღე") || booking.durationHours === "00:00 - 24:00") {
+      const calculatedDayTotal = rate * daysCount;
+      if (booking.totalPrice && booking.totalPrice > rate && booking.totalPrice >= calculatedDayTotal) {
+        return booking.totalPrice;
+      }
+      return calculatedDayTotal;
+    }
+
+    const parts = booking.durationHours ? booking.durationHours.split('-') : [];
+    if (parts.length === 2) {
+      const [startH, startM] = parts[0].trim().split(':').map(Number);
+      const [endH, endM] = parts[1].trim().split(':').map(Number);
+      if (!isNaN(startH) && !isNaN(endH)) {
+        const diffHrs = Math.max(0.5, ((endH * 60 + (endM || 0)) - (startH * 60 + (startM || 0))) / 60);
+        const hoursPerDay = Math.ceil(diffHrs);
+        const calculatedHourTotal = rate * hoursPerDay * daysCount;
+        if (booking.totalPrice && booking.totalPrice > rate && booking.totalPrice >= calculatedHourTotal) {
+          return booking.totalPrice;
+        }
+        return calculatedHourTotal;
+      }
+    }
+
+    return booking.totalPrice && booking.totalPrice >= rate * daysCount ? booking.totalPrice : rate * daysCount;
   };
 
   const handlePrintInvoice = () => {
@@ -343,16 +406,17 @@ export default function AdminPanel({
     content += `ელ-ფოსტა: ,${selectedInvoiceBooking.email}\n\n`;
     
     // Table Details
-    content += "მომსახურების აღწერა,ჯავშნის თარიღი,საათები,ტარიფი (₾),ჯამური ღირებულება (₾)\n";
+    content += "მომსახურების აღწერა,ჯავშნის თარიღი,რაოდენობა,ტარიფი (₾),ჯამური ღირებულება (₾)\n";
     
     const qtyDisplay = getInvoiceQtyDisplay(selectedInvoiceBooking);
     const rateDisplay = getInvoiceRateDisplay(selectedInvoiceBooking);
+    const invoiceTotal = getInvoiceTotal(selectedInvoiceBooking);
     const parsedXlsDates = parseBookingDates(selectedInvoiceBooking.date);
     const dateFormattedForXls = parsedXlsDates.length > 3
       ? `${formatSingleDisplayDate(parsedXlsDates[0])} – ${formatSingleDisplayDate(parsedXlsDates[parsedXlsDates.length - 1])} (სულ ${parsedXlsDates.length} დღე)`
       : selectedInvoiceBooking.date.split(',').map(d => formatSingleDisplayDate(d.trim())).join(', ');
     
-    content += `"${selectedInvoiceBooking.roomName.replace(/"/g, '""')} - დარბაზის/სივრცის დაჯავშნა (დეტალები: ${selectedInvoiceBooking.durationHours.replace(/"/g, '""')}, ${selectedInvoiceBooking.numPeople} კაცი)","${dateFormattedForXls.replace(/"/g, '""')}","${qtyDisplay}",${rateDisplay},${selectedInvoiceBooking.totalPrice}\n\n`;
+    content += `"${selectedInvoiceBooking.roomName.replace(/"/g, '""')} - დარბაზის/სივრცის დაჯავშნა (დეტალები: ${selectedInvoiceBooking.durationHours.replace(/"/g, '""')}, ${selectedInvoiceBooking.numPeople} კაცი)","${dateFormattedForXls.replace(/"/g, '""')}","${qtyDisplay}",${rateDisplay},${invoiceTotal}\n\n`;
     
     if (parsedXlsDates.length > 1) {
       content += `დაჯავშნილი დღეების სრული განრიგი (სულ ${parsedXlsDates.length} დღე):\n`;
@@ -365,7 +429,7 @@ export default function AdminPanel({
     }
     
     // Totals
-    content += `,,ლიმიტი/ჯამი:,,₾${selectedInvoiceBooking.totalPrice}.00 GEL\n`;
+    content += `,,ლიმიტი/ჯამი:,,₾${invoiceTotal}.00 GEL\n`;
     content += `,,სტატუსი:,,დადასტურებული\n\n`;
     content += `შენიშვნა: ,"${bookingSettings.invoiceFooter || 'გიორგი წერეთლის ქუჩა #12, ფოთი, საქართველო. გმადლობთ, რომ სარგებლობთ ახალგაზრდული ჰაბის სივრცით!'}"\n`;
 
@@ -686,7 +750,8 @@ export default function AdminPanel({
     const year = new Date().getFullYear();
     const invNum = `INV-${year}-${padded}`;
     
-    onApproveBooking(booking.id, invNum);
+    const calculatedTotal = getInvoiceTotal(booking);
+    onApproveBooking(booking.id, invNum, calculatedTotal);
   };
 
   // Handle Reject setup
@@ -4108,7 +4173,7 @@ export default function AdminPanel({
                           {getInvoiceQtyDisplay(selectedInvoiceBooking)}
                         </td>
                         <td className="py-3 px-3 text-right font-mono">₾{getInvoiceRateDisplay(selectedInvoiceBooking)}</td>
-                        <td className="py-3 px-3 text-right font-mono font-bold">₾{selectedInvoiceBooking.totalPrice}</td>
+                        <td className="py-3 px-3 text-right font-mono font-bold">₾{getInvoiceTotal(selectedInvoiceBooking)}</td>
                       </tr>
                     </tbody>
                   </table>
@@ -4204,7 +4269,7 @@ export default function AdminPanel({
                   <div className="text-right ml-auto space-y-1">
                     <div className="text-xs text-slate-450 font-semibold uppercase">გადასახდელი თანხა</div>
                     <div className="font-display font-black text-2xl text-slate-900 font-mono">
-                      ₾{selectedInvoiceBooking.totalPrice}.00 GEL
+                      ₾{getInvoiceTotal(selectedInvoiceBooking)}.00 GEL
                     </div>
                   </div>
                 </div>

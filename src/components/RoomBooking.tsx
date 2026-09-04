@@ -8,9 +8,16 @@ import { Room, Booking, CustomQuestion } from '../types';
 import { 
   Users, DollarSign, Calendar as CalIcon, Clock, CheckCircle, 
   AlertTriangle, ChevronLeft, ChevronRight, MessageSquare, 
-  Building2, User2, Eye, Info, Percent, X, Check, Youtube, Compass, GraduationCap 
+  Building2, User2, Eye, Info, Percent, X, Check, Youtube, Compass, GraduationCap,
+  CalendarRange, Sparkles, Filter, Trash2
 } from 'lucide-react';
-import { formatDisplayDate, formatBookingDateSummary } from '../utils/dateFormatter';
+import { 
+  formatDisplayDate, 
+  formatBookingDateSummary, 
+  groupDatesByMonth, 
+  getBookingConsecutiveRanges, 
+  formatSingleDisplayDate 
+} from '../utils/dateFormatter';
 import { getMaxCapacity } from '../utils/capacityHelper';
 
 interface RoomBookingProps {
@@ -50,6 +57,14 @@ export default function RoomBooking({
   const [numPeople, setNumPeople] = useState<number>(1);
   const [startTime, setStartTime] = useState<string>('09:00');
   const [endTime, setEndTime] = useState<string>('12:00');
+
+  // Multi-month range picker & presets state
+  const [showRangePicker, setShowRangePicker] = useState<boolean>(false);
+  const [rangeStart, setRangeStart] = useState<string>('');
+  const [rangeEnd, setRangeEnd] = useState<string>('');
+  const [rangeWeekdaysOnly, setRangeWeekdaysOnly] = useState<boolean>(false);
+  const [isRangeClickMode, setIsRangeClickMode] = useState<boolean>(false);
+  const [rangeAnchorDate, setRangeAnchorDate] = useState<string | null>(null);
 
   // Profile/Contact State
   const [firstName, setFirstName] = useState('');
@@ -290,15 +305,102 @@ export default function RoomBooking({
     }, 50);
   };
 
+  const handleApplyDateRange = (startDateStr: string, endDateStr: string, weekdaysOnly: boolean) => {
+    if (!startDateStr || !endDateStr) return;
+    const start = new Date(startDateStr);
+    const end = new Date(endDateStr);
+    if (isNaN(start.getTime()) || isNaN(end.getTime()) || start > end) return;
+
+    const newDates: string[] = [];
+    const cur = new Date(start);
+    while (cur <= end) {
+      const dayOfWeek = cur.getDay(); // 0 = Sun, 6 = Sat
+      if (!weekdaysOnly || (dayOfWeek !== 0 && dayOfWeek !== 6)) {
+        newDates.push(cur.toISOString().split('T')[0]);
+      }
+      cur.setDate(cur.getDate() + 1);
+    }
+
+    setSelectedDates(prev => Array.from(new Set([...prev, ...newDates])).sort());
+    setErrorMessage('');
+  };
+
+  const handleApplyPreset = (preset: 'currentMonth' | 'nextMonth' | 'next2Months' | 'next3Months') => {
+    const today = new Date();
+    const curY = today.getFullYear();
+    const curM = today.getMonth();
+
+    if (preset === 'currentMonth') {
+      const startStr = `${curY}-${String(curM + 1).padStart(2, '0')}-01`;
+      const lastDay = new Date(curY, curM + 1, 0).getDate();
+      const endStr = `${curY}-${String(curM + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+      handleApplyDateRange(startStr, endStr, rangeWeekdaysOnly);
+    } else if (preset === 'nextMonth') {
+      const nextDate = new Date(curY, curM + 1, 1);
+      const nY = nextDate.getFullYear();
+      const nM = nextDate.getMonth();
+      const startStr = `${nY}-${String(nM + 1).padStart(2, '0')}-01`;
+      const lastDay = new Date(nY, nM + 1, 0).getDate();
+      const endStr = `${nY}-${String(nM + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+      handleApplyDateRange(startStr, endStr, rangeWeekdaysOnly);
+    } else if (preset === 'next2Months') {
+      const startStr = `${curY}-${String(curM + 1).padStart(2, '0')}-01`;
+      const targetDate = new Date(curY, curM + 2, 0); // last day of next month
+      const tY = targetDate.getFullYear();
+      const tM = targetDate.getMonth();
+      const lastDay = targetDate.getDate();
+      const endStr = `${tY}-${String(tM + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+      handleApplyDateRange(startStr, endStr, rangeWeekdaysOnly);
+    } else if (preset === 'next3Months') {
+      const startStr = `${curY}-${String(curM + 1).padStart(2, '0')}-01`;
+      const targetDate = new Date(curY, curM + 3, 0); // last day of 2 months later
+      const tY = targetDate.getFullYear();
+      const tM = targetDate.getMonth();
+      const lastDay = targetDate.getDate();
+      const endStr = `${tY}-${String(tM + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+      handleApplyDateRange(startStr, endStr, rangeWeekdaysOnly);
+    }
+  };
+
+  const handleClearMonthDates = (monthKey: string) => {
+    setSelectedDates(prev => prev.filter(d => !d.startsWith(monthKey)));
+  };
+
   const handleDaySelect = (dayNumber: number) => {
     const formattedDate = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(dayNumber).padStart(2, '0')}`;
-    setSelectedDates(prev => {
-      if (prev.includes(formattedDate)) {
-        return prev.filter(d => d !== formattedDate);
+    
+    if (isRangeClickMode) {
+      if (!rangeAnchorDate) {
+        setRangeAnchorDate(formattedDate);
       } else {
-        return [...prev, formattedDate];
+        const d1 = new Date(rangeAnchorDate);
+        const d2 = new Date(formattedDate);
+        const start = d1 <= d2 ? d1 : d2;
+        const end = d1 <= d2 ? d2 : d1;
+        
+        const newDates: string[] = [];
+        const cur = new Date(start);
+        while (cur <= end) {
+          const dayOfWeek = cur.getDay();
+          if (!rangeWeekdaysOnly || (dayOfWeek !== 0 && dayOfWeek !== 6)) {
+            newDates.push(cur.toISOString().split('T')[0]);
+          }
+          cur.setDate(cur.getDate() + 1);
+        }
+        
+        setSelectedDates(prev => Array.from(new Set([...prev, ...newDates])).sort());
+        setRangeAnchorDate(null);
+        setIsRangeClickMode(false);
       }
-    });
+    } else {
+      setSelectedDates(prev => {
+        if (prev.includes(formattedDate)) {
+          return prev.filter(d => d !== formattedDate);
+        } else {
+          return [...prev, formattedDate];
+        }
+      });
+    }
     setErrorMessage('');
   };
 
@@ -555,21 +657,211 @@ export default function RoomBooking({
                   <div className="space-y-6 animate-fadeIn">
                     {/* Month Picker Widgets layout */}
                     <div>
-                      <label className="block text-xs font-black uppercase text-slate-400 tracking-wider mb-2.5">
-                        აირჩიეთ თარიღი კალენდარზე ({monthNames[currentMonth]} {currentYear})
-                      </label>
+                      <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
+                        <label className="block text-xs font-black uppercase text-slate-500 tracking-wider">
+                          აირჩიეთ თარიღი კალენდარზე ({monthNames[currentMonth]} {currentYear})
+                        </label>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setShowRangePicker(prev => !prev)}
+                            className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition-all flex items-center gap-1 cursor-pointer ${
+                              showRangePicker 
+                                ? 'bg-brand-600 text-white border-brand-600 shadow-2xs' 
+                                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                            }`}
+                          >
+                            <CalendarRange className="h-3.5 w-3.5" />
+                            <span>{showRangePicker ? 'დიაპაზონის დახურვა' : 'პერიოდის / დიაპაზონის არჩევა'}</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsRangeClickMode(prev => !prev);
+                              setRangeAnchorDate(null);
+                            }}
+                            className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition-all flex items-center gap-1 cursor-pointer ${
+                              isRangeClickMode 
+                                ? 'bg-amber-500 text-white border-amber-600 shadow-2xs' 
+                                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                            }`}
+                            title="კალენდარზე პირველი და ბოლო დღის დაკლიკებით დიაპაზონის მონიშვნა"
+                          >
+                            <Sparkles className="h-3.5 w-3.5" />
+                            <span>{isRangeClickMode ? (rangeAnchorDate ? 'დააკლიკეთ ბოლო დღეს' : 'დააკლიკეთ პირველ დღეს') : '2-კლიკიანი დიაპაზონი'}</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Expandable Multi-Month Range Picker & Presets Panel */}
+                      {showRangePicker && (
+                        <div className="mb-3.5 p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-3 animate-fadeIn">
+                          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2">
+                            <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                              <CalendarRange className="h-4 w-4 text-brand-600" />
+                              <span>მრავალდღიანი პერიოდის სწრაფი მონიშვნა</span>
+                            </span>
+                            <span className="text-[11px] text-slate-500">
+                              შეგიძლიათ მონიშნოთ ნებისმიერი ხანგრძლივობის პერიოდი რამდენიმე თვის მასშტაბით
+                            </span>
+                          </div>
+
+                          {/* Quick Presets */}
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="text-[10px] font-bold uppercase text-slate-400 mr-1">სწრაფი პაკეტები:</span>
+                            <button
+                              type="button"
+                              onClick={() => handleApplyPreset('currentMonth')}
+                              className="px-2.5 py-1 text-xs font-bold rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-slate-800 shadow-2xs cursor-pointer transition-colors"
+                            >
+                              მიმდინარე თვე
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleApplyPreset('nextMonth')}
+                              className="px-2.5 py-1 text-xs font-bold rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-slate-800 shadow-2xs cursor-pointer transition-colors"
+                            >
+                              მომდევნო თვე
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleApplyPreset('next2Months')}
+                              className="px-2.5 py-1 text-xs font-bold rounded-lg bg-brand-50 border border-brand-200 text-brand-700 hover:bg-brand-100 shadow-2xs cursor-pointer transition-colors"
+                            >
+                              2 თვე (სრული)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleApplyPreset('next3Months')}
+                              className="px-2.5 py-1 text-xs font-bold rounded-lg bg-brand-50 border border-brand-200 text-brand-700 hover:bg-brand-100 shadow-2xs cursor-pointer transition-colors"
+                            >
+                              3 თვე (სრული)
+                            </button>
+                          </div>
+
+                          {/* Custom Date Range Inputs */}
+                          <div className="flex flex-wrap items-center gap-2 pt-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs text-slate-500 font-medium">დან:</span>
+                              <input
+                                type="date"
+                                value={rangeStart}
+                                onChange={(e) => setRangeStart(e.target.value)}
+                                className="px-2 py-1 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold text-slate-800 focus:outline-hidden"
+                              />
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs text-slate-500 font-medium">მდე:</span>
+                              <input
+                                type="date"
+                                value={rangeEnd}
+                                onChange={(e) => setRangeEnd(e.target.value)}
+                                className="px-2 py-1 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold text-slate-800 focus:outline-hidden"
+                              />
+                            </div>
+
+                            <label className="flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer select-none bg-white px-2.5 py-1 rounded-lg border border-slate-200 shadow-2xs">
+                              <input
+                                type="checkbox"
+                                checked={rangeWeekdaysOnly}
+                                onChange={(e) => setRangeWeekdaysOnly(e.target.checked)}
+                                className="h-3.5 w-3.5 rounded text-brand-600 focus:ring-brand-500 cursor-pointer"
+                              />
+                              <span>მხოლოდ სამუშაო დღეები (ორშ-პარ)</span>
+                            </label>
+
+                            <button
+                              type="button"
+                              onClick={() => handleApplyDateRange(rangeStart, rangeEnd, rangeWeekdaysOnly)}
+                              disabled={!rangeStart || !rangeEnd}
+                              className="px-3 py-1 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold rounded-lg cursor-pointer transition-colors shadow-2xs"
+                            >
+                              ✓ დიაპაზონის მონიშვნა
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Multi-Month Quick-Jump Badges (if dates selected in multiple months) */}
+                      {(() => {
+                        const monthGroups = groupDatesByMonth(selectedDates);
+                        if (monthGroups.length <= 1) return null;
+
+                        return (
+                          <div className="mb-2.5 p-2 bg-slate-50 border border-slate-200/80 rounded-xl flex flex-wrap items-center gap-1.5 text-xs">
+                            <span className="text-[10px] font-black uppercase text-slate-400 mr-1">მონიშნული თვეები:</span>
+                            {monthGroups.map(group => {
+                              const [yStr, mStr] = group.monthKey.split('-');
+                              const gY = parseInt(yStr, 10);
+                              const gM = parseInt(mStr, 10) - 1;
+                              const isCurrentViewingMonth = currentYear === gY && currentMonth === gM;
+
+                              return (
+                                <button
+                                  key={group.monthKey}
+                                  type="button"
+                                  onClick={() => {
+                                    setCurrentYear(gY);
+                                    setCurrentMonth(gM);
+                                  }}
+                                  className={`px-2 py-0.5 rounded-lg text-xs font-bold border transition-all cursor-pointer flex items-center gap-1 ${
+                                    isCurrentViewingMonth
+                                      ? 'bg-brand-600 text-white border-brand-600 shadow-2xs'
+                                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                                  }`}
+                                  title={`გადართვა კალენდარზე: ${group.monthLabel}`}
+                                >
+                                  <span>{group.monthLabel}</span>
+                                  <span className={`text-[10px] px-1 rounded-sm ${isCurrentViewingMonth ? 'bg-brand-700 text-white' : 'bg-slate-100 text-slate-600 font-mono'}`}>
+                                    {group.dates.length} დღე
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
+
                       <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-xs">
                         
-                        <div className="flex justify-between items-center mb-4">
-                          <span className="font-display font-bold text-sm text-slate-800">
-                            {monthNames[currentMonth]} {currentYear}
-                          </span>
+                        <div className="flex flex-wrap justify-between items-center gap-2 mb-4">
+                          <div className="flex items-center gap-2">
+                            <select
+                              value={currentMonth}
+                              onChange={(e) => setCurrentMonth(Number(e.target.value))}
+                              className="font-display font-bold text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 focus:outline-hidden cursor-pointer"
+                            >
+                              {monthNames.map((m, idx) => (
+                                <option key={idx} value={idx}>{m}</option>
+                              ))}
+                            </select>
+
+                            <select
+                              value={currentYear}
+                              onChange={(e) => setCurrentYear(Number(e.target.value))}
+                              className="font-display font-bold text-sm text-slate-800 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 focus:outline-hidden cursor-pointer font-mono"
+                            >
+                              {Array.from({ length: 5 }).map((_, idx) => {
+                                const yr = new Date().getFullYear() + idx;
+                                return <option key={yr} value={yr}>{yr}</option>;
+                              })}
+                            </select>
+
+                            {isRangeClickMode && (
+                              <span className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md animate-pulse">
+                                {rangeAnchorDate ? `საწყისი: ${rangeAnchorDate} ➔ დააკლიკეთ მეორე დღეს` : 'დააკლიკეთ საწყის დღეს'}
+                              </span>
+                            )}
+                          </div>
+
                           <div className="flex space-x-1">
                             <button
                               id="cal-prev"
                               type="button"
                               onClick={handlePrevMonth}
                               className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-100 cursor-pointer"
+                              title="წინა თვე"
                             >
                               <ChevronLeft className="h-4 w-4" />
                             </button>
@@ -578,6 +870,7 @@ export default function RoomBooking({
                               type="button"
                               onClick={handleNextMonth}
                               className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-100 cursor-pointer"
+                              title="მომდევნო თვე"
                             >
                               <ChevronRight className="h-4 w-4" />
                             </button>
@@ -610,6 +903,7 @@ export default function RoomBooking({
                             const dayNum = i + 1;
                             const formattedDateString = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
                             const isSelected = selectedDates.includes(formattedDateString);
+                            const isAnchor = isRangeClickMode && rangeAnchorDate === formattedDateString;
                             
                             const matchedBookings = getBookingStatusForDate(dayNum);
                             const hasBookings = !!matchedBookings;
@@ -624,13 +918,15 @@ export default function RoomBooking({
                                 type="button"
                                 onClick={() => handleDaySelect(dayNum)}
                                 className={`aspect-square text-xs font-bold rounded-lg flex flex-col items-center justify-center transition-all relative ${
-                                  isSelected
-                                    ? 'bg-slate-900 text-white scale-105 shadow-sm border-none'
-                                    : isFullyBooked
-                                      ? 'bg-rose-55 text-rose-700 border border-rose-150 cursor-pointer'
-                                      : hasBookings
-                                        ? 'bg-amber-55 text-amber-805 border border-amber-150 cursor-pointer'
-                                        : 'bg-slate-50 hover:bg-slate-200 text-slate-700 cursor-pointer border-none'
+                                  isAnchor
+                                    ? 'bg-amber-500 text-white ring-2 ring-amber-400 scale-105 shadow-sm'
+                                    : isSelected
+                                      ? 'bg-slate-900 text-white scale-105 shadow-sm border-none'
+                                      : isFullyBooked
+                                        ? 'bg-rose-55 text-rose-700 border border-rose-150 cursor-pointer'
+                                        : hasBookings
+                                          ? 'bg-amber-55 text-amber-805 border border-amber-150 cursor-pointer'
+                                          : 'bg-slate-50 hover:bg-slate-200 text-slate-700 cursor-pointer border-none'
                                 }`}
                               >
                                 <span>{dayNum}</span>
@@ -653,79 +949,117 @@ export default function RoomBooking({
                         </div>
                       </div>
 
-                      {/* Date details mapping list */}
+                      {/* Date details mapping list grouped by Month */}
                       {selectedDates.length > 0 && (
-                        <div className="mt-3 p-4 bg-white border border-slate-200/80 rounded-2xl space-y-2 max-h-72 overflow-y-auto shadow-sm">
-                          <div className="text-xs font-bold text-emerald-600 flex flex-wrap items-center justify-between gap-1 pb-2 border-b border-slate-100">
-                            <span className="flex items-center">
-                              <CheckCircle className="h-4 w-4 mr-1.5 shrink-0 text-emerald-600" />
-                              <span>მონიშნულია {selectedDates.length} დღე:</span>
-                            </span>
+                        <div className="mt-3 p-4 bg-white border border-slate-200/80 rounded-2xl space-y-3 max-h-80 overflow-y-auto shadow-sm">
+                          <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-100">
                             <div className="flex items-center space-x-2">
-                              <span className="text-[11px] font-mono text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md font-bold">
-                                {formatBookingDateSummary(selectedDates.join(', ')).summary}
+                              <CheckCircle className="h-4 w-4 text-emerald-600 shrink-0" />
+                              <span className="text-xs font-bold text-slate-900">
+                                სულ მონიშნულია <span className="font-mono text-emerald-700">{selectedDates.length}</span> დღე
                               </span>
+                            </div>
+                            
+                            <div className="flex items-center gap-2">
+                              {(() => {
+                                const ranges = getBookingConsecutiveRanges(selectedDates);
+                                if (ranges.length === 1) {
+                                  return (
+                                    <span className="text-[11px] font-mono text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md font-bold">
+                                      {ranges[0].formattedStart === ranges[0].formattedEnd ? ranges[0].formattedStart : `${ranges[0].formattedStart} – ${ranges[0].formattedEnd}`}
+                                    </span>
+                                  );
+                                }
+                                return (
+                                  <span className="text-[11px] font-mono text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md font-bold">
+                                    {ranges.length} პერიოდი
+                                  </span>
+                                );
+                              })()}
+
                               <button 
                                 type="button" 
                                 onClick={() => setSelectedDates([])}
-                                className="text-[10px] text-rose-500 hover:text-rose-700 underline font-sans cursor-pointer"
+                                className="text-[11px] text-rose-500 hover:text-rose-700 underline font-sans cursor-pointer font-bold"
                               >
                                 გასუფთავება
                               </button>
                             </div>
                           </div>
+
+                          {/* Consecutive Ranges Overview */}
+                          {(() => {
+                            const ranges = getBookingConsecutiveRanges(selectedDates);
+                            if (ranges.length <= 1) return null;
+
+                            return (
+                              <div className="flex flex-wrap gap-1.5 pb-1">
+                                {ranges.map((rng, idx) => (
+                                  <span
+                                    key={idx}
+                                    className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-50 border border-slate-200 text-[11px] font-medium text-slate-700"
+                                  >
+                                    <span className="font-mono font-bold text-slate-900 mr-1">
+                                      {rng.formattedStart === rng.formattedEnd ? rng.formattedStart : `${rng.formattedStart} – ${rng.formattedEnd}`}
+                                    </span>
+                                    <span className="text-slate-400">({rng.count} დღე)</span>
+                                  </span>
+                                ))}
+                              </div>
+                            );
+                          })()}
                           
-                          <div className="space-y-2 pt-1">
-                            {[...selectedDates].sort().map(dateStr => {
-                              const dayBookings = getBookingsForDate(dateStr);
-                              const dayFullyBooked = dayBookings.some(b => b.durationHours.includes("მთელი დღე") || b.durationHours === "00:00 - 24:00");
-                              
-                              return (
-                                <div key={dateStr} className="p-2.5 rounded-xl bg-slate-50 border border-slate-150 space-y-1 hover:bg-slate-100/60 transition-colors">
-                                  <div className="flex justify-between items-center">
-                                    <div className="flex items-center space-x-2">
-                                      <span className="text-xs font-black text-slate-800 font-mono">{formatDisplayDate(dateStr)}</span>
-                                      {dayFullyBooked && (
-                                        <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase bg-rose-100 text-rose-700">
-                                          დაკავებულია სრულად
-                                        </span>
-                                      )}
-                                    </div>
-                                    <button
-                                      type="button"
-                                      onClick={() => setSelectedDates(prev => prev.filter(d => d !== dateStr))}
-                                      className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
-                                      title="თარიღის წაშლა"
-                                    >
-                                      <X className="h-3.5 w-3.5" />
-                                    </button>
-                                  </div>
-                                  {dayBookings.length === 0 ? (
-                                    <p className="text-[10px] text-emerald-600 font-sans italic">
-                                      ✓ ყველა მონიშნული ოთახი თავისუფალია ამ დღეს!
-                                    </p>
-                                  ) : (
-                                    <div className="space-y-1 font-sans">
-                                      <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider">უკვე არსებული ჯავშნები სივრცეებში:</span>
-                                      <div className="flex flex-wrap gap-1">
-                                        {dayBookings.map((b) => (
-                                          <span
-                                            key={b.id}
-                                            className={`px-1.5 py-0.5 rounded text-[9px] font-bold font-mono border ${
-                                              b.status === 'approved'
-                                                ? 'bg-emerald-50 text-emerald-700 border-emerald-150'
-                                                : 'bg-amber-50 text-amber-700 border-amber-150'
-                                            }`}
-                                          >
-                                            [{b.roomName}] {b.durationHours}
-                                          </span>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  )}
+                          {/* Grouped by Month */}
+                          <div className="space-y-3 pt-1">
+                            {groupDatesByMonth(selectedDates).map(group => (
+                              <div key={group.monthKey} className="p-3 rounded-xl bg-slate-50/80 border border-slate-200/90 space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-xs font-bold text-slate-800">
+                                    {group.monthLabel} ({group.dates.length} დღე)
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleClearMonthDates(group.monthKey)}
+                                    className="text-[10px] text-slate-400 hover:text-rose-600 font-sans cursor-pointer"
+                                    title="ამ თვის ყველა თარიღის წაშლა"
+                                  >
+                                    ✕ თვის გასუფთავება
+                                  </button>
                                 </div>
-                              );
-                            })}
+
+                                <div className="flex flex-wrap gap-1.5">
+                                  {group.dates.map(dateStr => {
+                                    const dayBookings = getBookingsForDate(dateStr);
+                                    const hasConflict = dayBookings.length > 0;
+                                    const dayFullyBooked = dayBookings.some(b => b.durationHours.includes("მთელი დღე") || b.durationHours === "00:00 - 24:00");
+
+                                    return (
+                                      <span
+                                        key={dateStr}
+                                        className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg border text-[11px] font-mono font-medium shadow-2xs ${
+                                          dayFullyBooked
+                                            ? 'bg-rose-50 text-rose-800 border-rose-200'
+                                            : hasConflict
+                                              ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                              : 'bg-white text-slate-800 border-slate-200'
+                                        }`}
+                                      >
+                                        <span>{formatSingleDisplayDate(dateStr)}</span>
+                                        {dayFullyBooked && <span className="text-[9px] font-black text-rose-600 uppercase">სრულად</span>}
+                                        <button
+                                          type="button"
+                                          onClick={() => setSelectedDates(prev => prev.filter(d => d !== dateStr))}
+                                          className="text-slate-400 hover:text-rose-600 cursor-pointer ml-0.5"
+                                          title="წაშლა"
+                                        >
+                                          <X className="h-3 w-3" />
+                                        </button>
+                                      </span>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            ))}
                           </div>
                         </div>
                       )}
@@ -821,6 +1155,34 @@ export default function RoomBooking({
                         </div>
                       </div>
                     </div>
+
+                    {/* Step 1 Live Pricing & Scope Preview */}
+                    {selectedDates.length > 0 && selectedRoomIds.length > 0 && (
+                      <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                        <div className="space-y-1">
+                          <div className="text-xs font-bold text-slate-800 flex items-center gap-2">
+                            <span>{selectedRoomIds.length} ოთახი</span>
+                            <span className="text-slate-300">•</span>
+                            <span>{selectedDates.length} დღე</span>
+                            {groupDatesByMonth(selectedDates).length > 1 && (
+                              <span className="px-2 py-0.5 rounded-md bg-brand-50 text-brand-700 font-mono text-[10px] font-bold border border-brand-200">
+                                {groupDatesByMonth(selectedDates).length} თვის მასშტაბით
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-slate-500 font-sans">
+                            {isFullDay ? 'სრული დღით დაჯავშნა (დღიური ტარიფი)' : `საათობრივი რეჟიმი: ${calculatedHours} საათი/დღეში`}
+                          </div>
+                        </div>
+
+                        <div className="text-left sm:text-right">
+                          <span className="block text-[10px] font-bold uppercase text-slate-400">წინასწარი ღირებულება</span>
+                          <span className="font-display font-black text-xl text-slate-900 font-mono">
+                            ₾{currentTotalPrice}
+                          </span>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Proceed/Next button to Questionnaire */}
                     <div className="pt-4 border-t border-slate-100 flex justify-end">
