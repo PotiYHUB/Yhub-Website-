@@ -10,7 +10,7 @@ import {
   AlertTriangle, ChevronLeft, ChevronRight, MessageSquare, 
   Building2, User2, Eye, Info, Percent, X, Check, Youtube, Compass, GraduationCap 
 } from 'lucide-react';
-import { formatDisplayDate } from '../utils/dateFormatter';
+import { formatDisplayDate, formatBookingDateSummary } from '../utils/dateFormatter';
 import { getMaxCapacity } from '../utils/capacityHelper';
 
 interface RoomBookingProps {
@@ -179,7 +179,6 @@ export default function RoomBooking({
     } else {
       setCurrentMonth(prev => prev - 1);
     }
-    setSelectedDates([]);
   };
 
   const handleNextMonth = () => {
@@ -189,7 +188,6 @@ export default function RoomBooking({
     } else {
       setCurrentMonth(prev => prev + 1);
     }
-    setSelectedDates([]);
   };
 
   // Hours length calculation
@@ -657,35 +655,50 @@ export default function RoomBooking({
 
                       {/* Date details mapping list */}
                       {selectedDates.length > 0 && (
-                        <div className="mt-3 p-4 bg-white border border-slate-200/80 rounded-2xl space-y-2 max-h-64 overflow-y-auto shadow-sm">
-                          <div className="text-xs font-bold text-emerald-600 flex items-center justify-between pb-1.5 border-b border-slate-100">
+                        <div className="mt-3 p-4 bg-white border border-slate-200/80 rounded-2xl space-y-2 max-h-72 overflow-y-auto shadow-sm">
+                          <div className="text-xs font-bold text-emerald-600 flex flex-wrap items-center justify-between gap-1 pb-2 border-b border-slate-100">
                             <span className="flex items-center">
-                              <CheckCircle className="h-4 w-4 mr-1.5 shrink-0" />
-                              <span>მონიშნულია თარიღები ({selectedDates.length}):</span>
+                              <CheckCircle className="h-4 w-4 mr-1.5 shrink-0 text-emerald-600" />
+                              <span>მონიშნულია {selectedDates.length} დღე:</span>
                             </span>
-                            <button 
-                              type="button" 
-                              onClick={() => setSelectedDates([])}
-                              className="text-[10px] text-slate-400 hover:text-slate-600 underline font-sans"
-                            >
-                              გასუფთავება
-                            </button>
+                            <div className="flex items-center space-x-2">
+                              <span className="text-[11px] font-mono text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md font-bold">
+                                {formatBookingDateSummary(selectedDates.join(', ')).summary}
+                              </span>
+                              <button 
+                                type="button" 
+                                onClick={() => setSelectedDates([])}
+                                className="text-[10px] text-rose-500 hover:text-rose-700 underline font-sans cursor-pointer"
+                              >
+                                გასუფთავება
+                              </button>
+                            </div>
                           </div>
                           
-                          <div className="space-y-3 pt-1">
-                            {selectedDates.map(dateStr => {
+                          <div className="space-y-2 pt-1">
+                            {[...selectedDates].sort().map(dateStr => {
                               const dayBookings = getBookingsForDate(dateStr);
                               const dayFullyBooked = dayBookings.some(b => b.durationHours.includes("მთელი დღე") || b.durationHours === "00:00 - 24:00");
                               
                               return (
-                                <div key={dateStr} className="p-2 rounded-lg bg-slate-50 border border-slate-100 space-y-1">
+                                <div key={dateStr} className="p-2.5 rounded-xl bg-slate-50 border border-slate-150 space-y-1 hover:bg-slate-100/60 transition-colors">
                                   <div className="flex justify-between items-center">
-                                    <span className="text-xs font-black text-slate-700">{formatDisplayDate(dateStr)}</span>
-                                    {dayFullyBooked && (
-                                      <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase bg-rose-100 text-rose-700">
-                                        დაკავებულია სრულად
-                                      </span>
-                                    )}
+                                    <div className="flex items-center space-x-2">
+                                      <span className="text-xs font-black text-slate-800 font-mono">{formatDisplayDate(dateStr)}</span>
+                                      {dayFullyBooked && (
+                                        <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase bg-rose-100 text-rose-700">
+                                          დაკავებულია სრულად
+                                        </span>
+                                      )}
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => setSelectedDates(prev => prev.filter(d => d !== dateStr))}
+                                      className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
+                                      title="თარიღის წაშლა"
+                                    >
+                                      <X className="h-3.5 w-3.5" />
+                                    </button>
                                   </div>
                                   {dayBookings.length === 0 ? (
                                     <p className="text-[10px] text-emerald-600 font-sans italic">

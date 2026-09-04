@@ -23,7 +23,7 @@
         "id": { "type": "string" },
         "roomId": { "type": "string" },
         "roomName": { "type": "string" },
-        "date": { "type": "string", "format": "date" },
+        "date": { "type": "string", "description": "Single date, date range, or comma-separated list of reserved dates" },
         "durationHours": { "type": "string" },
         "numPeople": { "type": "integer" },
         "totalPrice": { "type": "number" },

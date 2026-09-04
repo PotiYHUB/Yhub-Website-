@@ -9,6 +9,7 @@ import {
   ChevronLeft, ChevronRight, Calendar as CalendarIcon, 
   MapPin, Clock, Users, User, Check, X, FileText, Search, Filter, Edit
 } from 'lucide-react';
+import { parseBookingDates, formatDisplayDate, formatBookingDateSummary } from '../utils/dateFormatter';
 
 interface AdminCalendarProps {
   rooms: Room[];
@@ -162,12 +163,13 @@ export default function AdminCalendar({
     });
   }, [bookings, selectedRoomId, selectedStatus, searchQuery]);
 
-  // Map of date strings to bookings for instant lookup (splitting multi-day strings safely)
+  // Map of date strings to bookings for instant lookup (normalizing multi-day strings safely)
   const bookingsMap = useMemo(() => {
     const map: Record<string, Booking[]> = {};
     filteredBookings.forEach(b => {
-      const dates = b.date.split(',').map(d => d.trim());
-      dates.forEach(dateKey => {
+      const dates = parseBookingDates(b.date);
+      const finalDates = dates.length > 0 ? dates : b.date.split(',').map(d => d.trim());
+      finalDates.forEach(dateKey => {
         if (!map[dateKey]) {
           map[dateKey] = [];
         }

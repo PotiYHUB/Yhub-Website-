@@ -35,10 +35,7 @@ import {
   setDoc, 
   doc, 
   deleteDoc,
-  getDocs,
-  getDoc,
-  query,
-  limit
+  getDocs
 } from 'firebase/firestore';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { db, auth, loginWithGoogle, OperationType, handleFirestoreError, sanitizeForFirestore } from './firebase';
@@ -112,82 +109,46 @@ export default function App() {
     return () => clearTimeout(timer);
   }, []);
 
-  // Core databases initialized via cached states or blank states to prevent flicker
-  const [rooms, setRooms] = useState<Room[]>(() => {
-    try {
-      const cached = localStorage.getItem('potihub_cached_rooms');
-      return cached ? JSON.parse(cached) : [];
-    } catch {
-      return [];
-    }
-  });
+  // Core databases initialized via blank states initially to prevent old hardcoded data flicker
+  const [rooms, setRooms] = useState<Room[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
-  const [customQuestions, setCustomQuestions] = useState<CustomQuestion[]>(() => {
-    try {
-      const cached = localStorage.getItem('potihub_cached_questions');
-      return cached ? JSON.parse(cached) : [];
-    } catch {
-      return [];
-    }
-  });
-  const [hubItems, setHubItems] = useState<HubItem[]>(() => {
-    try {
-      const cached = localStorage.getItem('potihub_cached_hubItems');
-      return cached ? JSON.parse(cached) : [];
-    } catch {
-      return [];
-    }
-  });
-  const [mediaItems, setMediaItems] = useState<MediaItem[]>(() => {
-    try {
-      const cached = localStorage.getItem('potihub_cached_mediaItems');
-      return cached ? JSON.parse(cached) : [];
-    } catch {
-      return [];
-    }
-  });
-  const [bookingSettings, setBookingSettings] = useState(() => {
-    const defaults = {
-      fullDayDiscount: 10,
-      multiDayDiscount: 15,
-      hubAddress: 'გიორგი წერეთლის ქუჩა #12, ფოთი, საქართველო',
-      hubEmail: 'yhub.poti@gmail.com',
-      hubPhone: '+995 599 123 456',
-      hubWorkHours: 'ორშაბათი - პარასკევი: 10:00 - 20:00',
-      chatFacebook: 'https://facebook.com/PotiYouthHub/',
-      chatWhatsapp: 'https://wa.me/995599123456',
-      chatEmail: 'yhub.poti@gmail.com',
-      chatPhone: '+995599123456',
-      invoiceTitle: 'ინვოისი მომსახურებაზე',
-      invoiceOrgName: 'ფოთის ახალგაზრდული ჰაბი',
-      invoiceBankName: 'საქართველოს ბანკი',
-      invoiceIban: 'GE90BG0000000123456789',
-      invoiceTreasuryCode: '300773191',
-      invoiceFooter: 'გმადლობთ, რომ სარგებლობთ ახალგაზრდული ჰაბის სივრცით!',
-      footerTextUnderLogo: 'განათლების, ტექნოლოგიების, კარიერული ზრდისა და კულტურული განვითარების ცენტრი ქალაქ ფოთში. შემოგვიერთდი და მიიღე მონაწილეობა ჰაბის აქტივობებში.',
-      stat1Value: '4+',
-      stat1Label: 'თანამედროვე სივრცე',
-      stat2Value: '2k+',
-      stat2Label: 'აქტიური წევრი',
-      stat3Value: '100%',
-      stat3Label: 'მხარდაჭერა',
-      stat4Value: '12+',
-      stat4Label: 'მიმდინარე პროექტი',
-      seoTitle: 'ფოთის ახალგაზრდული ჰაბი | Poti Youth Hub',
-      seoDescription: 'განათლების, ტექნოლოგიების, კარიერული ზრდისა და კულტურული განვითარების ცენტრი ქალაქ ფოთში. შემოგვიერთდი და მიიღე მონაწილეობა ჰაბის აქტივობებში.',
-      seoKeywords: 'ფოთი, ახალგაზრდობა, ჰაბი, ტრენინგი, კარიერა, სივრცე',
-      seoImage: 'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?auto=format&fit=crop&w=1200&h=630&q=80',
-      seoGoogleAnalytics: 'G-XXXXXXXXXX',
-      seoRobotIndex: true,
-      schoolWaiverLabel: 'საგანმანათლებლო ორგანიზაცია ფოთიდან (უფასო)',
-      schoolWaiverText: 'ფოთში რეგისტრირებული სკოლებისთვის და საგანმანათლებლო დაწესებულებებისთვის სივრცეების დაჯავშნა სრულიად უფასოა!'
-    };
-    try {
-      const cached = localStorage.getItem('potihub_cached_settings');
-      return cached ? { ...defaults, ...JSON.parse(cached) } : defaults;
-    } catch {
-      return defaults;
-    }
+  const [customQuestions, setCustomQuestions] = useState<CustomQuestion[]>([]);
+  const [hubItems, setHubItems] = useState<HubItem[]>([]);
+  const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
+  const [bookingSettings, setBookingSettings] = useState({
+    fullDayDiscount: 10,
+    multiDayDiscount: 15,
+    hubAddress: 'გიორგი წერეთლის ქუჩა #12, ფოთი, საქართველო',
+    hubEmail: 'yhub.poti@gmail.com',
+    hubPhone: '+995 599 123 456',
+    hubWorkHours: 'ორშაბათი - პარასკევი: 10:00 - 20:00',
+    chatFacebook: 'https://facebook.com/PotiYouthHub/',
+    chatWhatsapp: 'https://wa.me/995599123456',
+    chatEmail: 'yhub.poti@gmail.com',
+    chatPhone: '+995599123456',
+    invoiceTitle: 'ინვოისი მომსახურებაზე',
+    invoiceOrgName: 'ფოთის ახალგაზრდული ჰაბი',
+    invoiceBankName: 'საქართველოს ბანკი',
+    invoiceIban: 'GE90BG0000000123456789',
+    invoiceTreasuryCode: '300773191',
+    invoiceFooter: 'გმადლობთ, რომ სარგებლობთ ახალგაზრდული ჰაბის სივრცით!',
+    footerTextUnderLogo: 'განათლების, ტექნოლოგიების, კარიერული ზრდისა და კულტურული განვითარების ცენტრი ქალაქ ფოთში. შემოგვიერთდი და მიიღე მონაწილეობა ჰაბის აქტივობებში.',
+    stat1Value: '4+',
+    stat1Label: 'თანამედროვე სივრცე',
+    stat2Value: '2k+',
+    stat2Label: 'აქტიური წევრი',
+    stat3Value: '100%',
+    stat3Label: 'მხარდაჭერა',
+    stat4Value: '12+',
+    stat4Label: 'მიმდინარე პროექტი',
+    seoTitle: 'ფოთის ახალგაზრდული ჰაბი | Poti Youth Hub',
+    seoDescription: 'განათლების, ტექნოლოგიების, კარიერული ზრდისა და კულტურული განვითარების ცენტრი ქალაქ ფოთში. შემოგვიერთდი და მიიღე მონაწილეობა ჰაბის აქტივობებში.',
+    seoKeywords: 'ფოთი, ახალგაზრდობა, ჰაბი, ტრენინგი, კარიერა, სივრცე',
+    seoImage: 'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?auto=format&fit=crop&w=1200&h=630&q=80',
+    seoGoogleAnalytics: 'G-XXXXXXXXXX',
+    seoRobotIndex: true,
+    schoolWaiverLabel: 'საგანმანათლებლო ორგანიზაცია ფოთიდან (უფასო)',
+    schoolWaiverText: 'ფოთში რეგისტრირებული სკოლებისთვის და საგანმანათლებლო დაწესებულებებისთვის სივრცეების დაჯავშნა სრულიად უფასოა!'
   });
 
   // Tracking individual visitors' guest bookings submissions globally
@@ -278,24 +239,21 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // 2. Dual-mode Firebase Firestore Synchronizations (Cached for Guests, Real-time for Admin)
+  // 2. Real-time Firebase Firestore Synchronizations
   useEffect(() => {
-    if (authLoading) return; // Wait until auth state is fully determined
-
-    if (isSystemAdmin) {
-      console.log("System Admin detected: Enabling real-time Firestore listeners.");
-      
-      // A. Subscribe to Rooms
-      const unsubscribeRooms = onSnapshot(
-        collection(db, 'rooms'),
-        (snapshot) => {
-          const roomsList: Room[] = [];
-          snapshot.forEach((doc) => {
-            roomsList.push(doc.data() as Room);
-          });
-          
-          if (roomsList.length === 0) {
-            setRooms(INITIAL_ROOMS);
+    // A. Subscribe to Rooms
+    const unsubscribeRooms = onSnapshot(
+      collection(db, 'rooms'),
+      (snapshot) => {
+        const roomsList: Room[] = [];
+        snapshot.forEach((doc) => {
+          roomsList.push(doc.data() as Room);
+        });
+        
+        if (roomsList.length === 0) {
+          setRooms(INITIAL_ROOMS);
+          // Auto-seed if the admin opens initially
+          if (auth.currentUser?.email === 'yhub.poti@gmail.com') {
             INITIAL_ROOMS.forEach(async (room) => {
               try {
                 await setDoc(doc(db, 'rooms', room.id), sanitizeForFirestore(room));
@@ -303,35 +261,36 @@ export default function App() {
                 console.error("Bootstrapping error:", err);
               }
             });
-          } else {
-            roomsList.sort((a, b) => {
-              const orderA = a.order !== undefined ? a.order : (Number(a.id) || 999);
-              const orderB = b.order !== undefined ? b.order : (Number(b.id) || 999);
-              return orderA - orderB;
-            });
-            setRooms(roomsList);
-            localStorage.setItem('potihub_cached_rooms', JSON.stringify(roomsList));
           }
-          setLoadedCollections(prev => ({ ...prev, rooms: true }));
-        },
-        (error) => {
-          console.warn("Firestore collection rooms offline, Using fallback data.", error);
-          setRooms(INITIAL_ROOMS);
-          setLoadedCollections(prev => ({ ...prev, rooms: true }));
-        }
-      );
-
-      // B. Subscribe to Custom Questions
-      const unsubscribeQuestions = onSnapshot(
-        collection(db, 'customQuestions'),
-        (snapshot) => {
-          const questionsList: CustomQuestion[] = [];
-          snapshot.forEach((doc) => {
-            questionsList.push(doc.data() as CustomQuestion);
+        } else {
+          roomsList.sort((a, b) => {
+            const orderA = a.order !== undefined ? a.order : (Number(a.id) || 999);
+            const orderB = b.order !== undefined ? b.order : (Number(b.id) || 999);
+            return orderA - orderB;
           });
-          
-          if (questionsList.length === 0) {
-            setCustomQuestions(DEFAULT_CUSTOM_QUESTIONS);
+          setRooms(roomsList);
+        }
+        setLoadedCollections(prev => ({ ...prev, rooms: true }));
+      },
+      (error) => {
+        console.warn("Firestore collection rooms offline, Using fallback data.", error);
+        setRooms(INITIAL_ROOMS);
+        setLoadedCollections(prev => ({ ...prev, rooms: true }));
+      }
+    );
+
+    // B. Subscribe to Custom Questions
+    const unsubscribeQuestions = onSnapshot(
+      collection(db, 'customQuestions'),
+      (snapshot) => {
+        const questionsList: CustomQuestion[] = [];
+        snapshot.forEach((doc) => {
+          questionsList.push(doc.data() as CustomQuestion);
+        });
+        
+        if (questionsList.length === 0) {
+          setCustomQuestions(DEFAULT_CUSTOM_QUESTIONS);
+          if (auth.currentUser?.email === 'yhub.poti@gmail.com') {
             DEFAULT_CUSTOM_QUESTIONS.forEach(async (q) => {
               try {
                 await setDoc(doc(db, 'customQuestions', q.id), sanitizeForFirestore(q));
@@ -339,30 +298,31 @@ export default function App() {
                 console.error("Bootstrapping error:", err);
               }
             });
-          } else {
-            setCustomQuestions(questionsList);
-            localStorage.setItem('potihub_cached_questions', JSON.stringify(questionsList));
           }
-          setLoadedCollections(prev => ({ ...prev, questions: true }));
-        },
-        (error) => {
-          console.warn("Firestore customQuestions collection read failed. Using fallback.", error);
-          setCustomQuestions(DEFAULT_CUSTOM_QUESTIONS);
-          setLoadedCollections(prev => ({ ...prev, questions: true }));
+        } else {
+          setCustomQuestions(questionsList);
         }
-      );
+        setLoadedCollections(prev => ({ ...prev, questions: true }));
+      },
+      (error) => {
+        console.warn("Firestore customQuestions collection read failed. Using fallback.", error);
+        setCustomQuestions(DEFAULT_CUSTOM_QUESTIONS);
+        setLoadedCollections(prev => ({ ...prev, questions: true }));
+      }
+    );
 
-      // C. Subscribe to CMS Hub items (News, jobs, vacancies)
-      const unsubscribeHub = onSnapshot(
-        collection(db, 'hubItems'),
-        (snapshot) => {
-          const list: HubItem[] = [];
-          snapshot.forEach((doc) => {
-            list.push(doc.data() as HubItem);
-          });
-          
-          if (list.length === 0) {
-            setHubItems(INITIAL_HUB_ITEMS);
+    // C. Subscribe to CMS Hub items (News, jobs, vacancies)
+    const unsubscribeHub = onSnapshot(
+      collection(db, 'hubItems'),
+      (snapshot) => {
+        const list: HubItem[] = [];
+        snapshot.forEach((doc) => {
+          list.push(doc.data() as HubItem);
+        });
+        
+        if (list.length === 0) {
+          setHubItems(INITIAL_HUB_ITEMS);
+          if (auth.currentUser?.email === 'yhub.poti@gmail.com') {
             INITIAL_HUB_ITEMS.forEach(async (item) => {
               try {
                 await setDoc(doc(db, 'hubItems', item.id), sanitizeForFirestore(item));
@@ -370,39 +330,39 @@ export default function App() {
                 console.error("Bootstrapping error:", err);
               }
             });
-          } else {
-            list.sort((a, b) => {
-              const orderA = a.order !== undefined ? a.order : 0;
-              const orderB = b.order !== undefined ? b.order : 0;
-              if (orderA !== orderB) {
-                return orderA - orderB;
-              }
-              return b.date.localeCompare(a.date);
-            });
-            setHubItems(list);
-            localStorage.setItem('potihub_cached_hubItems', JSON.stringify(list));
           }
-          setLoadedCollections(prev => ({ ...prev, hubItems: true }));
-        },
-        (error) => {
-          console.warn("Firestore hubItems read failed. Using fallback.", error);
-          setHubItems(INITIAL_HUB_ITEMS);
-          setLoadedCollections(prev => ({ ...prev, hubItems: true }));
+        } else {
+          list.sort((a, b) => {
+            const orderA = a.order !== undefined ? a.order : 0;
+            const orderB = b.order !== undefined ? b.order : 0;
+            if (orderA !== orderB) {
+              return orderA - orderB;
+            }
+            return b.date.localeCompare(a.date);
+          });
+          setHubItems(list);
         }
-      );
+        setLoadedCollections(prev => ({ ...prev, hubItems: true }));
+      },
+      (error) => {
+        console.warn("Firestore hubItems read failed. Using fallback.", error);
+        setHubItems(INITIAL_HUB_ITEMS);
+        setLoadedCollections(prev => ({ ...prev, hubItems: true }));
+      }
+    );
 
-      // D. Subscribe to bookingSettings
-      const unsubscribeSettings = onSnapshot(
-        doc(db, 'settings', 'bookingSettings'),
-        (snapshot) => {
-          if (snapshot.exists()) {
-            const data = snapshot.data();
-            setBookingSettings((prev) => {
-              const updated = { ...prev, ...data };
-              localStorage.setItem('potihub_cached_settings', JSON.stringify(updated));
-              return updated;
-            });
-          } else {
+    // D. Subscribe to bookingSettings
+    const unsubscribeSettings = onSnapshot(
+      doc(db, 'settings', 'bookingSettings'),
+      (snapshot) => {
+        if (snapshot.exists()) {
+          const data = snapshot.data();
+          setBookingSettings((prev) => ({
+            ...prev,
+            ...data
+          }));
+        } else {
+          if (auth.currentUser?.email === 'yhub.poti@gmail.com') {
             setDoc(doc(db, 'settings', 'bookingSettings'), {
               fullDayDiscount: 10,
               multiDayDiscount: 15,
@@ -420,25 +380,27 @@ export default function App() {
               schoolWaiverText: 'ფოთში რეგისტრირებული სკოლებისთვის და საგანმანათლებლო დაწესებულებებისთვის სივრცეების დაჯავშნა სრულიად უფასოა!'
             }).catch(err => console.error("Error setting initial settings:", err));
           }
-          setLoadedCollections(prev => ({ ...prev, settings: true }));
-        },
-        (error) => {
-          console.warn("Firestore settings read failed. Using fallback.", error);
-          setLoadedCollections(prev => ({ ...prev, settings: true }));
         }
-      );
+        setLoadedCollections(prev => ({ ...prev, settings: true }));
+      },
+      (error) => {
+        console.warn("Firestore settings read failed. Using fallback.", error);
+        setLoadedCollections(prev => ({ ...prev, settings: true }));
+      }
+    );
 
-      // E. Subscribe to mediaItems
-      const unsubscribeMediaItems = onSnapshot(
-        collection(db, 'mediaItems'),
-        (snapshot) => {
-          const list: MediaItem[] = [];
-          snapshot.forEach((doc) => {
-            list.push(doc.data() as MediaItem);
-          });
+    // E. Subscribe to mediaItems
+    const unsubscribeMediaItems = onSnapshot(
+      collection(db, 'mediaItems'),
+      (snapshot) => {
+        const list: MediaItem[] = [];
+        snapshot.forEach((doc) => {
+          list.push(doc.data() as MediaItem);
+        });
 
-          if (list.length === 0) {
-            setMediaItems(INITIAL_MEDIA_ITEMS);
+        if (list.length === 0) {
+          setMediaItems(INITIAL_MEDIA_ITEMS);
+          if (auth.currentUser?.email === 'yhub.poti@gmail.com') {
             INITIAL_MEDIA_ITEMS.forEach(async (item) => {
               try {
                 await setDoc(doc(db, 'mediaItems', item.id), sanitizeForFirestore(item));
@@ -446,171 +408,35 @@ export default function App() {
                 console.error("Bootstrapping media error:", err);
               }
             });
-          } else {
-            list.sort((a, b) => {
-              const orderA = a.order !== undefined ? a.order : 0;
-              const orderB = b.order !== undefined ? b.order : 0;
-              if (orderA !== orderB) {
-                return orderA - orderB;
-              }
-              return b.date.localeCompare(a.date);
-            });
-            setMediaItems(list);
-            localStorage.setItem('potihub_cached_mediaItems', JSON.stringify(list));
           }
-          setLoadedCollections(prev => ({ ...prev, mediaItems: true }));
-        },
-        (error) => {
-          console.warn("Firestore mediaItems read failed. Using fallback.", error);
-          setMediaItems(INITIAL_MEDIA_ITEMS);
-          setLoadedCollections(prev => ({ ...prev, mediaItems: true }));
-        }
-      );
-
-      return () => {
-        unsubscribeRooms();
-        unsubscribeQuestions();
-        unsubscribeHub();
-        unsubscribeSettings();
-        unsubscribeMediaItems();
-      };
-    } else {
-      // GUEST / NORMAL USER CACHING STRATEGY
-      console.log("Guest mode detected: Checking cache status...");
-      
-      const cachedRooms = localStorage.getItem('potihub_cached_rooms');
-      const cachedQuestions = localStorage.getItem('potihub_cached_questions');
-      const cachedHubItems = localStorage.getItem('potihub_cached_hubItems');
-      const cachedMediaItems = localStorage.getItem('potihub_cached_mediaItems');
-      const cachedSettings = localStorage.getItem('potihub_cached_settings');
-      const cacheTimestampStr = localStorage.getItem('potihub_cache_timestamp');
-
-      const isCacheFull = cachedRooms && cachedQuestions && cachedHubItems && cachedMediaItems && cachedSettings;
-      const isCacheFresh = cacheTimestampStr && (Date.now() - Number(cacheTimestampStr) < 30 * 60 * 1000); // 30 minutes cache
-
-      if (isCacheFull && isCacheFresh) {
-        console.log("Using cached Firestore data (cache is fresh). Firestore reads avoided: 100%");
-        setLoadedCollections({
-          rooms: true,
-          questions: true,
-          hubItems: true,
-          settings: true,
-          mediaItems: true
-        });
-      } else {
-        console.log("Cache is missing or stale. Fetching fresh values from Firestore...");
-        
-        // Parallel fetch-once of all guest documents to minimize reads and network latency
-        Promise.all([
-          getDocs(collection(db, 'rooms')),
-          getDocs(collection(db, 'customQuestions')),
-          getDocs(collection(db, 'hubItems')),
-          getDoc(doc(db, 'settings', 'bookingSettings')),
-          getDocs(collection(db, 'mediaItems'))
-        ]).then(([roomsSnap, questionsSnap, hubSnap, settingsSnap, mediaSnap]) => {
-          
-          // 1. Rooms processing
-          const roomsList: Room[] = [];
-          roomsSnap.forEach((doc) => {
-            roomsList.push(doc.data() as Room);
-          });
-          if (roomsList.length > 0) {
-            roomsList.sort((a, b) => {
-              const orderA = a.order !== undefined ? a.order : (Number(a.id) || 999);
-              const orderB = b.order !== undefined ? b.order : (Number(b.id) || 999);
+        } else {
+          list.sort((a, b) => {
+            const orderA = a.order !== undefined ? a.order : 0;
+            const orderB = b.order !== undefined ? b.order : 0;
+            if (orderA !== orderB) {
               return orderA - orderB;
-            });
-            setRooms(roomsList);
-            localStorage.setItem('potihub_cached_rooms', JSON.stringify(roomsList));
-          } else {
-            setRooms(INITIAL_ROOMS);
-          }
-
-          // 2. Custom Questions processing
-          const questionsList: CustomQuestion[] = [];
-          questionsSnap.forEach((doc) => {
-            questionsList.push(doc.data() as CustomQuestion);
+            }
+            return b.date.localeCompare(a.date);
           });
-          if (questionsList.length > 0) {
-            setCustomQuestions(questionsList);
-            localStorage.setItem('potihub_cached_questions', JSON.stringify(questionsList));
-          } else {
-            setCustomQuestions(DEFAULT_CUSTOM_QUESTIONS);
-          }
-
-          // 3. Hub Items processing
-          const hubList: HubItem[] = [];
-          hubSnap.forEach((doc) => {
-            hubList.push(doc.data() as HubItem);
-          });
-          if (hubList.length > 0) {
-            hubList.sort((a, b) => {
-              const orderA = a.order !== undefined ? a.order : 0;
-              const orderB = b.order !== undefined ? b.order : 0;
-              if (orderA !== orderB) {
-                return orderA - orderB;
-              }
-              return b.date.localeCompare(a.date);
-            });
-            setHubItems(hubList);
-            localStorage.setItem('potihub_cached_hubItems', JSON.stringify(hubList));
-          } else {
-            setHubItems(INITIAL_HUB_ITEMS);
-          }
-
-          // 4. Settings processing
-          if (settingsSnap.exists()) {
-            const sData = settingsSnap.data();
-            setBookingSettings((prev) => {
-              const updated = { ...prev, ...sData };
-              localStorage.setItem('potihub_cached_settings', JSON.stringify(updated));
-              return updated;
-            });
-          }
-
-          // 5. Media Items processing
-          const mediaList: MediaItem[] = [];
-          mediaSnap.forEach((doc) => {
-            mediaList.push(doc.data() as MediaItem);
-          });
-          if (mediaList.length > 0) {
-            mediaList.sort((a, b) => {
-              const orderA = a.order !== undefined ? a.order : 0;
-              const orderB = b.order !== undefined ? b.order : 0;
-              if (orderA !== orderB) {
-                return orderA - orderB;
-              }
-              return b.date.localeCompare(a.date);
-            });
-            setMediaItems(mediaList);
-            localStorage.setItem('potihub_cached_mediaItems', JSON.stringify(mediaList));
-          } else {
-            setMediaItems(INITIAL_MEDIA_ITEMS);
-          }
-
-          // Update cache timestamp
-          localStorage.setItem('potihub_cache_timestamp', Date.now().toString());
-
-          setLoadedCollections({
-            rooms: true,
-            questions: true,
-            hubItems: true,
-            settings: true,
-            mediaItems: true
-          });
-        }).catch((err) => {
-          console.warn("Failed fetching fresh Firestore data, keeping current cache/state:", err);
-          setLoadedCollections({
-            rooms: true,
-            questions: true,
-            hubItems: true,
-            settings: true,
-            mediaItems: true
-          });
-        });
+          setMediaItems(list);
+        }
+        setLoadedCollections(prev => ({ ...prev, mediaItems: true }));
+      },
+      (error) => {
+        console.warn("Firestore mediaItems read failed. Using fallback.", error);
+        setMediaItems(INITIAL_MEDIA_ITEMS);
+        setLoadedCollections(prev => ({ ...prev, mediaItems: true }));
       }
-    }
-  }, [authLoading, isSystemAdmin]);
+    );
+
+    return () => {
+      unsubscribeRooms();
+      unsubscribeQuestions();
+      unsubscribeHub();
+      unsubscribeSettings();
+      unsubscribeMediaItems();
+    };
+  }, []);
 
   // Dynamic Browser Tab / SEO Meta Tag Injection
   useEffect(() => {
@@ -669,7 +495,7 @@ export default function App() {
     }
   }, [bookingSettings.seoTitle, bookingSettings.seoDescription, bookingSettings.seoKeywords, bookingSettings.seoImage, bookingSettings.seoRobotIndex, bookingSettings.seoGoogleAnalytics]);
 
-  // 3. Admin bookings list subscription (Optimized with a maximum safety limit of 300 to prevent quota exhaustion)
+  // 3. Admin bookings list subscription
   useEffect(() => {
     if (!user || user.email !== 'yhub.poti@gmail.com') {
       setBookings([]);
@@ -677,7 +503,7 @@ export default function App() {
     }
 
     const unsubscribeBookings = onSnapshot(
-      query(collection(db, 'bookings'), limit(300)),
+      collection(db, 'bookings'),
       (snapshot) => {
         const list: Booking[] = [];
         snapshot.forEach((doc) => {
@@ -722,7 +548,7 @@ export default function App() {
     return () => unsubscribeSubmitted();
   }, [submittedId]);
 
-  // 5. Emails log live subscription (Optimized with a maximum safety limit of 150 to prevent quota exhaustion)
+  // 5. Emails log live subscription
   useEffect(() => {
     if (!user || user.email !== 'yhub.poti@gmail.com') {
       setEmails([]);
@@ -730,7 +556,7 @@ export default function App() {
     }
 
     const unsubscribeEmails = onSnapshot(
-      query(collection(db, 'emails'), limit(150)),
+      collection(db, 'emails'),
       (snapshot) => {
         const list: any[] = [];
         snapshot.forEach((doc) => {

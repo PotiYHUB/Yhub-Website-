@@ -15,7 +15,14 @@ import {
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage } from '../firebase';
 import { optimizeImageForWeb, blobToBase64 } from '../utils/imageOptimizer';
-import { formatDisplayDate } from '../utils/dateFormatter';
+import { 
+  formatDisplayDate, 
+  formatSingleDisplayDate, 
+  formatBookingDateSummary, 
+  parseBookingDates, 
+  getBookingConsecutiveRanges, 
+  groupDatesByMonth 
+} from '../utils/dateFormatter';
 import { getMaxCapacity } from '../utils/capacityHelper';
 // @ts-ignore
 import logoImg from '../assets/images/small-logo.png';
@@ -133,6 +140,64 @@ export default function AdminPanel({
   const [editB_adminNotes, setEditB_adminNotes] = useState('');
   const [editB_reGenerateInvoice, setEditB_reGenerateInvoice] = useState(false);
 
+  // Multi-day range generator helpers for admin
+  const [rangeStartDate, setRangeStartDate] = useState('');
+  const [rangeEndDate, setRangeEndDate] = useState('');
+  const [rangeWeekdaysOnly, setRangeWeekdaysOnly] = useState(false);
+  const [showRangeHelper, setShowRangeHelper] = useState(false);
+
+  const handleAddRangeToDate = () => {
+    if (!rangeStartDate || !rangeEndDate) return;
+    const start = new Date(rangeStartDate);
+    const end = new Date(rangeEndDate);
+    if (start > end) return;
+
+    const newDates: string[] = [];
+    const cur = new Date(start);
+    while (cur <= end) {
+      const dayOfWeek = cur.getDay(); // 0 = Sun, 6 = Sat
+      if (!rangeWeekdaysOnly || (dayOfWeek !== 0 && dayOfWeek !== 6)) {
+        newDates.push(cur.toISOString().split('T')[0]);
+      }
+      cur.setDate(cur.getDate() + 1);
+    }
+
+    const existing = parseBookingDates(editB_date);
+    const combined = Array.from(new Set([...existing, ...newDates])).sort();
+    setEditB_date(combined.join(', '));
+  };
+
+  const handleRemoveDateFromEdit = (dateToRemove: string) => {
+    const existing = parseBookingDates(editB_date);
+    const remaining = existing.filter(d => d !== dateToRemove);
+    setEditB_date(remaining.join(', '));
+  };
+
+  const handleAutoCalcPrice = () => {
+    const selectedRoom = rooms.find(r => r.id === editB_roomId);
+    if (!selectedRoom) return;
+
+    const parsed = parseBookingDates(editB_date);
+    const daysCount = Math.max(1, parsed.length);
+
+    let pricePerDay = selectedRoom.price * 2;
+    if (editB_durationHours.includes("მთელი დღე") || editB_durationHours === "00:00 - 24:00") {
+      pricePerDay = selectedRoom.dayPrice || (selectedRoom.price * 8);
+    } else {
+      const parts = editB_durationHours.split('-');
+      if (parts.length === 2) {
+        const [startH, startM] = parts[0].trim().split(':').map(Number);
+        const [endH, endM] = parts[1].trim().split(':').map(Number);
+        if (!isNaN(startH) && !isNaN(endH)) {
+          const durationHrs = Math.max(0.5, ((endH * 60 + (endM || 0)) - (startH * 60 + (startM || 0))) / 60);
+          pricePerDay = Math.ceil(durationHrs) * selectedRoom.price;
+        }
+      }
+    }
+
+    setEditB_totalPrice(pricePerDay * daysCount);
+  };
+
   const handleEditBooking = (b: Booking) => {
     setEditingBooking(b);
     setEditB_roomId(b.roomId);
@@ -152,6 +217,7 @@ export default function AdminPanel({
     setEditB_invoiceDate(b.invoiceDate || '');
     setEditB_adminNotes(b.adminNotes || '');
     setEditB_reGenerateInvoice(false);
+    setShowRangeHelper(false);
   };
 
   const handleRoomChangeInEdit = (selectedRoomId: string) => {
@@ -166,11 +232,14 @@ export default function AdminPanel({
     e.preventDefault();
     if (!editingBooking) return;
 
+    const parsedDates = parseBookingDates(editB_date);
+    const cleanedDate = parsedDates.length > 0 ? parsedDates.join(', ') : editB_date.trim();
+
     const updatedBooking: Booking = {
       ...editingBooking,
       roomId: editB_roomId,
       roomName: editB_roomName,
-      date: editB_date,
+      date: cleanedDate,
       durationHours: editB_durationHours,
       numPeople: Number(editB_numPeople),
       totalPrice: Number(editB_totalPrice),
@@ -278,8 +347,22 @@ export default function AdminPanel({
     
     const qtyDisplay = getInvoiceQtyDisplay(selectedInvoiceBooking);
     const rateDisplay = getInvoiceRateDisplay(selectedInvoiceBooking);
+    const parsedXlsDates = parseBookingDates(selectedInvoiceBooking.date);
+    const dateFormattedForXls = parsedXlsDates.length > 3
+      ? `${formatSingleDisplayDate(parsedXlsDates[0])} – ${formatSingleDisplayDate(parsedXlsDates[parsedXlsDates.length - 1])} (სულ ${parsedXlsDates.length} დღე)`
+      : selectedInvoiceBooking.date.split(',').map(d => formatSingleDisplayDate(d.trim())).join(', ');
     
-    content += `"${selectedInvoiceBooking.roomName.replace(/"/g, '""')} - დარბაზის/სივრცის დაჯავშნა (დეტალები: ${selectedInvoiceBooking.durationHours.replace(/"/g, '""')}, ${selectedInvoiceBooking.numPeople} კაცი)",${selectedInvoiceBooking.date},"${qtyDisplay}",${rateDisplay},${selectedInvoiceBooking.totalPrice}\n\n`;
+    content += `"${selectedInvoiceBooking.roomName.replace(/"/g, '""')} - დარბაზის/სივრცის დაჯავშნა (დეტალები: ${selectedInvoiceBooking.durationHours.replace(/"/g, '""')}, ${selectedInvoiceBooking.numPeople} კაცი)","${dateFormattedForXls.replace(/"/g, '""')}","${qtyDisplay}",${rateDisplay},${selectedInvoiceBooking.totalPrice}\n\n`;
+    
+    if (parsedXlsDates.length > 1) {
+      content += `დაჯავშნილი დღეების სრული განრიგი (სულ ${parsedXlsDates.length} დღე):\n`;
+      const ranges = getBookingConsecutiveRanges(parsedXlsDates);
+      ranges.forEach(r => {
+        const rLabel = r.formattedStart === r.formattedEnd ? r.formattedStart : `${r.formattedStart} – ${r.formattedEnd}`;
+        content += `პერიოდი: ,"${rLabel} (${r.count} დღე)"\n`;
+      });
+      content += `ყველა თარიღი: ,"${parsedXlsDates.map(d => formatSingleDisplayDate(d)).join(', ')}"\n\n`;
+    }
     
     // Totals
     content += `,,ლიმიტი/ჯამი:,,₾${selectedInvoiceBooking.totalPrice}.00 GEL\n`;
@@ -361,7 +444,7 @@ export default function AdminPanel({
     } else {
       csvContent += "რიგი,ჯავშნის ID,ოთახის დასახელება,თარიღი,ხანგრძლივობა,სახელი,გვარი,ორგანიზაცია,ელ-ფოსტა,ტელეფონი,საერთო ფასი (₾),სტატუსი\n";
       sheetBookings.forEach((b, idx) => {
-        csvContent += `${idx + 2},RSV-${b.id},"${b.roomName.replace(/"/g, '""')}",${b.date},"${b.durationHours}",${b.firstName},${b.lastName},"${b.organization.replace(/"/g, '""')}",${b.email},${b.phone},${b.totalPrice},${b.status}\n`;
+        csvContent += `${idx + 2},RSV-${b.id},"${b.roomName.replace(/"/g, '""')}","${(b.date || '').replace(/"/g, '""')}","${b.durationHours}","${(b.firstName || '').replace(/"/g, '""')}","${(b.lastName || '').replace(/"/g, '""')}","${(b.organization || '').replace(/"/g, '""')}",${b.email},${b.phone},${b.totalPrice},${b.status}\n`;
       });
     }
     const blob = new Blob([csvContent], { type: "application/vnd.ms-excel;charset=utf-8;" });
@@ -1178,11 +1261,24 @@ export default function AdminPanel({
                           
                           <div>
                             <span className="block text-[10px] text-slate-400 uppercase font-black tracking-wider">თარიღი & დრო</span>
-                            <span className="font-medium text-slate-800 flex items-center mt-0.5">
-                              <Calendar className="h-3.5 w-3.5 mr-1 text-slate-450" /> {b.date}
-                            </span>
-                            <span className="font-mono text-xs text-slate-600 flex items-center mt-0.5">
-                              <Clock className="h-3.5 w-3.5 mr-1 text-slate-455" /> {b.durationHours}
+                            {(() => {
+                              const dateSummary = formatBookingDateSummary(b.date);
+                              return (
+                                <div className="mt-0.5 space-y-0.5">
+                                  <span className="font-medium text-slate-800 flex items-center">
+                                    <Calendar className="h-3.5 w-3.5 mr-1 text-brand-600 shrink-0" /> 
+                                    <span className="font-mono text-xs font-semibold">{dateSummary.summary}</span>
+                                  </span>
+                                  {dateSummary.isMultiDay && dateSummary.count > 3 && (
+                                    <span className="inline-block text-[10px] text-brand-700 bg-brand-50 px-2 py-0.5 rounded-md border border-brand-200 font-bold font-mono">
+                                      სულ {dateSummary.count} დღე
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })()}
+                            <span className="font-mono text-xs text-slate-600 flex items-center mt-1">
+                              <Clock className="h-3.5 w-3.5 mr-1 text-slate-455 shrink-0" /> {b.durationHours}
                             </span>
                           </div>
 
@@ -3717,8 +3813,8 @@ export default function AdminPanel({
                           <td className="px-3 border-r border-[#e1e1e1] font-bold text-slate-800 truncate">
                             {b.roomName}
                           </td>
-                          <td className="px-3 border-r border-[#e1e1e1] font-mono text-[10.5px] text-slate-600 truncate">
-                            {b.date}
+                          <td className="px-3 border-r border-[#e1e1e1] font-mono text-[10.5px] text-slate-600 truncate" title={b.date}>
+                            {formatBookingDateSummary(b.date).summary}
                           </td>
                           <td className="px-3 border-r border-[#e1e1e1] font-sans text-[11px] text-slate-500 truncate">
                             {b.durationHours}
@@ -3966,7 +4062,48 @@ export default function AdminPanel({
                             ჯავშანი {selectedInvoiceBooking.durationHours} | დარეგისტრირებულია: {selectedInvoiceBooking.numPeople} კაცზე
                           </span>
                         </td>
-                        <td className="py-3 px-3 text-center font-mono text-xs">{selectedInvoiceBooking.date}</td>
+                        {(() => {
+                          const parsedDates = parseBookingDates(selectedInvoiceBooking.date);
+                          const count = parsedDates.length;
+
+                          if (count <= 1) {
+                            return (
+                              <td className="py-3 px-3 text-center font-mono text-xs whitespace-nowrap">
+                                {formatDisplayDate(selectedInvoiceBooking.date) || '—'}
+                              </td>
+                            );
+                          }
+
+                          if (count <= 3) {
+                            return (
+                              <td className="py-3 px-3 text-center font-mono text-xs">
+                                <div className="flex flex-col items-center space-y-1">
+                                  {parsedDates.map(d => (
+                                    <span key={d} className="px-1.5 py-0.5 bg-slate-100 rounded text-[11px] font-mono whitespace-nowrap">
+                                      {formatSingleDisplayDate(d)}
+                                    </span>
+                                  ))}
+                                </div>
+                              </td>
+                            );
+                          }
+
+                          const first = formatSingleDisplayDate(parsedDates[0]);
+                          const last = formatSingleDisplayDate(parsedDates[parsedDates.length - 1]);
+
+                          return (
+                            <td className="py-3 px-3 text-center font-mono text-xs">
+                              <div className="flex flex-col items-center space-y-1">
+                                <span className="font-bold text-slate-900 whitespace-nowrap text-[11px]">
+                                  {first} – {last}
+                                </span>
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-brand-50 text-brand-700 border border-brand-200 whitespace-nowrap">
+                                  სულ {count} დღე
+                                </span>
+                              </div>
+                            </td>
+                          );
+                        })()}
                         <td className="py-3 px-3 text-center font-mono">
                           {getInvoiceQtyDisplay(selectedInvoiceBooking)}
                         </td>
@@ -3976,6 +4113,71 @@ export default function AdminPanel({
                     </tbody>
                   </table>
                 </div>
+
+                {/* Reserved Dates Detailed Schedule Breakdown on Invoice */}
+                {(() => {
+                  const parsedInvoiceDates = parseBookingDates(selectedInvoiceBooking.date);
+                  if (parsedInvoiceDates.length <= 1) return null;
+
+                  const invoiceRanges = getBookingConsecutiveRanges(parsedInvoiceDates);
+                  const invoiceMonthGroups = groupDatesByMonth(parsedInvoiceDates);
+                  const firstDateStr = formatSingleDisplayDate(parsedInvoiceDates[0]);
+                  const lastDateStr = formatSingleDisplayDate(parsedInvoiceDates[parsedInvoiceDates.length - 1]);
+
+                  return (
+                    <div className="bg-slate-50/80 rounded-2xl p-4 sm:p-5 border border-slate-200/90 space-y-3 print:bg-white print:border-slate-300 print:p-3 break-inside-avoid">
+                      <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-200 print:border-slate-300">
+                        <div className="flex items-center space-x-2">
+                          <Calendar className="h-4 w-4 text-brand-600 print:text-black shrink-0" />
+                          <span className="font-display font-black text-xs text-slate-900 uppercase tracking-wide">
+                            დაჯავშნილი დღეების განრიგი (სულ {parsedInvoiceDates.length} დღე)
+                          </span>
+                        </div>
+                        <span className="text-[11px] font-mono font-bold text-slate-700 bg-white px-2.5 py-0.5 rounded-lg border border-slate-200 shadow-2xs print:border-slate-300 whitespace-nowrap">
+                          პერიოდი: {firstDateStr} – {lastDateStr}
+                        </span>
+                      </div>
+
+                      {/* Consecutive date ranges (e.g. 01.09.2026 – 15.09.2026 (15 დღე)) */}
+                      {invoiceRanges.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5">
+                          {invoiceRanges.map((rng, idx) => (
+                            <span 
+                              key={idx} 
+                              className="inline-flex items-center px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-[11px] font-medium text-slate-700 shadow-2xs print:border-slate-300 whitespace-nowrap"
+                            >
+                              <span className="font-mono font-bold text-slate-900 mr-1.5">
+                                {rng.formattedStart === rng.formattedEnd ? rng.formattedStart : `${rng.formattedStart} – ${rng.formattedEnd}`}
+                              </span>
+                              <span className="text-slate-400 font-sans">({rng.count} დღე)</span>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Detailed day chips grouped cleanly by Month */}
+                      <div className="space-y-2.5 pt-1">
+                        {invoiceMonthGroups.map(group => (
+                          <div key={group.monthKey} className="space-y-1.5">
+                            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 print:text-slate-700">
+                              {group.monthLabel} ({group.dates.length} დღე):
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {group.dates.map(d => (
+                                <span
+                                  key={d}
+                                  className="inline-block px-2 py-0.5 rounded-md bg-white border border-slate-200 font-mono text-[10.5px] text-slate-800 whitespace-nowrap shadow-2xs font-semibold print:border-slate-300 print:bg-white"
+                                >
+                                  {formatSingleDisplayDate(d)}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Sub Total calculations and stamp mockup */}
                 <div className="flex justify-between items-center bg-slate-50 p-5 rounded-2xl border border-slate-100">
@@ -4098,17 +4300,128 @@ export default function AdminPanel({
                       </select>
                     </div>
 
-                    {/* Date */}
-                    <div className="space-y-1">
-                      <label className="block text-xs font-bold text-slate-700">თარიღი / თარიღები:</label>
-                      <input
-                        type="text"
+                    {/* Date / Multi-day Management */}
+                    <div className="space-y-2 md:col-span-2 bg-slate-50 p-3.5 rounded-2xl border border-slate-200/90">
+                      <div className="flex flex-wrap items-center justify-between gap-1 pb-1">
+                        <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                          <Calendar className="h-3.5 w-3.5 text-brand-600" />
+                          <span>თარიღები / დაჯავშნილი დღეები:</span>
+                        </label>
+                        <div className="flex items-center space-x-2">
+                          <button
+                            type="button"
+                            onClick={() => setShowRangeHelper(prev => !prev)}
+                            className="text-[11px] font-bold text-brand-600 hover:text-brand-800 underline flex items-center gap-1 cursor-pointer"
+                          >
+                            <Sparkles className="h-3 w-3" />
+                            <span>{showRangeHelper ? 'დიაპაზონის დამალვა' : '+ დიაპაზონის გენერატორი (მაგ: 2 თვე)'}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditB_date('')}
+                            className="text-[10px] text-rose-500 hover:text-rose-700 underline cursor-pointer"
+                          >
+                            გასუფთავება
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Optional Range Generator Helper Box */}
+                      {showRangeHelper && (
+                        <div className="p-3 bg-white rounded-xl border border-brand-200/80 shadow-xs space-y-2.5">
+                          <div className="text-[11px] font-bold text-brand-800 flex items-center justify-between">
+                            <span>დიაპაზონის გენერირება (ავტომატურად დაამატებს ყველა დღეს პერიოდში):</span>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                            <div>
+                              <label className="block text-[10px] text-slate-500 font-bold mb-0.5">საწყისი თარიღი:</label>
+                              <input
+                                type="date"
+                                value={rangeStartDate}
+                                onChange={(e) => setRangeStartDate(e.target.value)}
+                                className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono outline-none focus:ring-1 focus:ring-brand-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] text-slate-500 font-bold mb-0.5">საბოლოო თარიღი:</label>
+                              <input
+                                type="date"
+                                value={rangeEndDate}
+                                onChange={(e) => setRangeEndDate(e.target.value)}
+                                className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono outline-none focus:ring-1 focus:ring-brand-500"
+                              />
+                            </div>
+                            <div className="flex flex-col justify-end space-y-1.5">
+                              <label className="flex items-center space-x-1.5 text-[10px] text-slate-600 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={rangeWeekdaysOnly}
+                                  onChange={(e) => setRangeWeekdaysOnly(e.target.checked)}
+                                  className="rounded text-brand-600 focus:ring-brand-500"
+                                />
+                                <span>მხოლოდ სამუშაო დღეები</span>
+                              </label>
+                              <button
+                                type="button"
+                                onClick={handleAddRangeToDate}
+                                className="w-full py-2 px-3 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                              >
+                                + დიაპაზონის ჩამატება
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Multi-line textarea for dates */}
+                      <textarea
+                        rows={2}
                         value={editB_date}
                         onChange={(e) => setEditB_date(e.target.value)}
-                        placeholder="მაგ: 23.06.2026"
-                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-sans focus:bg-white focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500/80 outline-none font-medium"
+                        placeholder="შეიყვანეთ თარიღები მძიმით, ახალი ხაზით ან დიაპაზონით (მაგ: 2026-09-01, 2026-09-02... ან 01.09.2026 - 30.10.2026)"
+                        className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-mono focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500/80 outline-none leading-relaxed"
                         required
                       />
+
+                      {/* Real-time parse status and chip preview */}
+                      {(() => {
+                        const parsed = parseBookingDates(editB_date);
+                        if (parsed.length === 0) return null;
+                        const summary = formatBookingDateSummary(editB_date).summary;
+
+                        return (
+                          <div className="space-y-1.5 pt-0.5">
+                            <div className="flex flex-wrap items-center justify-between gap-1 text-xs">
+                              <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                                ✓ ამოცნობილია: <b className="font-mono text-emerald-900">{parsed.length}</b> დაჯავშნილი დღე ({summary})
+                              </span>
+                              <span className="text-[10.5px] text-slate-400 font-sans">
+                                (დააწკაპუნეთ ✕-ს თარიღის ამოსაღებად)
+                              </span>
+                            </div>
+
+                            {/* Chips container */}
+                            <div className="flex flex-wrap gap-1 max-h-28 overflow-y-auto p-1.5 bg-white rounded-xl border border-slate-200/80">
+                              {parsed.map(d => (
+                                <span
+                                  key={d}
+                                  className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-mono border border-slate-200 transition-colors"
+                                >
+                                  <span>{formatSingleDisplayDate(d)}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveDateFromEdit(d)}
+                                    className="ml-1 text-slate-400 hover:text-rose-600 rounded cursor-pointer"
+                                    title="თარიღის ამოშლა"
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </button>
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
 
                     {/* Duration / Hours */}
@@ -4138,8 +4451,18 @@ export default function AdminPanel({
                     </div>
 
                     {/* Price */}
-                    <div className="space-y-1">
-                      <label className="block text-xs font-bold text-slate-700">სრული ფასი (₾):</label>
+                    <div className="space-y-1 md:col-span-2">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-xs font-bold text-slate-700">სრული ფასი (₾):</label>
+                        <button
+                          type="button"
+                          onClick={handleAutoCalcPrice}
+                          className="text-[10.5px] text-purple-700 hover:text-purple-900 underline font-bold cursor-pointer"
+                          title="დაითვლის ოთახის ტარიფს გამრავლებულს დღეების რაოდენობაზე"
+                        >
+                          ფასის ავტო-გამოთვლა ({parseBookingDates(editB_date).length || 1} დღეზე)
+                        </button>
+                      </div>
                       <input
                         type="number"
                         min={0}
